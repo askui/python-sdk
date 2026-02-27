@@ -14,11 +14,11 @@ class ComputerMoveMouseTool(ComputerBaseTool):
                 "properties": {
                     "x": {
                         "type": "integer",
-                        "description": "The x coordinate of the mouse position.",
+                        "description": "The x coordinate of the mouse position as int.",
                     },
                     "y": {
                         "type": "integer",
-                        "description": "The y coordinate of the mouse position.",
+                        "description": "The y coordinate of the mouse position as int.",
                     },
                 },
                 "required": ["x", "y"],
@@ -26,7 +26,12 @@ class ComputerMoveMouseTool(ComputerBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     def __call__(self, x: int, y: int) -> str:
+        # for some reason, the agent occasionally calls the tool with the coords
+        # encoded as strings, which will lead the tool to failing. To prevent this we
+        # will explicitly convert to int here
+        x, y = int(x), int(y)
         self.agent_os.mouse_move(x, y)
         return f"Mouse was moved to position ({x}, {y})."

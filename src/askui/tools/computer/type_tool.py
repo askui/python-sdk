@@ -29,6 +29,7 @@ class ComputerTypeTool(ComputerBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     def __call__(self, text: str, typing_speed: int = 50) -> str:
         self.agent_os.type(text, typing_speed)

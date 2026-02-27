@@ -28,6 +28,7 @@ class AndroidScreenshotTool(AndroidBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> tuple[str, Image.Image]:
@@ -83,6 +84,7 @@ class AndroidTapTool(AndroidBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     @override
     def __call__(
@@ -134,6 +136,7 @@ class AndroidTypeTool(AndroidBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, text: str) -> str:
@@ -191,6 +194,7 @@ class AndroidDragAndDropTool(AndroidBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, x1: int, y1: int, x2: int, y2: int, duration: int = 1000) -> str:
@@ -224,6 +228,7 @@ class AndroidKeyTapEventTool(AndroidBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, key_name: ANDROID_KEY) -> str:
@@ -298,6 +303,7 @@ class AndroidSwipeTool(AndroidBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, x1: int, y1: int, x2: int, y2: int, duration: int = 1000) -> str:
@@ -354,6 +360,7 @@ class AndroidKeyCombinationTool(AndroidBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, keys: list[ANDROID_KEY], duration: int = 100) -> str:
@@ -397,6 +404,7 @@ class AndroidShellTool(AndroidBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, command: str) -> str:
@@ -415,6 +423,7 @@ class AndroidGetConnectedDevicesSerialNumbersTool(AndroidBaseTool):
             description="Can be used to get all connected devices serial numbers.",
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:
@@ -434,6 +443,7 @@ class AndroidGetConnectedDisplaysInfosTool(AndroidBaseTool):
             "current selected device.",
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:
@@ -455,6 +465,7 @@ class AndroidGetCurrentConnectedDeviceInfosTool(AndroidBaseTool):
             """,
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:
@@ -488,6 +499,7 @@ class AndroidSelectDeviceBySerialNumberTool(AndroidBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, device_sn: str) -> str:
@@ -516,6 +528,7 @@ class AndroidSelectDisplayByUniqueIDTool(AndroidBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self, display_unique_id: int) -> str:
@@ -536,6 +549,7 @@ class AndroidConnectTool(AndroidBaseTool):
             """,
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:

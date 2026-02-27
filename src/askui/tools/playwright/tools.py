@@ -35,6 +35,7 @@ class PlaywrightGotoTool(Tool):
             },
         )
         self._agent_os = agent_os
+        self.is_cacheable = True
 
     @override
     def __call__(self, url: str) -> str:
@@ -60,6 +61,7 @@ class PlaywrightBackTool(Tool):
             ),
         )
         self._agent_os = agent_os
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:
@@ -85,6 +87,7 @@ class PlaywrightForwardTool(Tool):
             ),
         )
         self._agent_os = agent_os
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:
@@ -109,6 +112,7 @@ class PlaywrightGetPageTitleTool(Tool):
             ),
         )
         self._agent_os = agent_os
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:
@@ -133,6 +137,7 @@ class PlaywrightGetPageUrlTool(Tool):
             ),
         )
         self._agent_os = agent_os
+        self.is_cacheable = True
 
     @override
     def __call__(self) -> str:

@@ -30,6 +30,7 @@ from .models import (
     ToolUseBlockParam,
     UrlImageSourceParam,
 )
+from .models.shared.conversation_callback import ConversationCallback
 from .models.shared.settings import (
     DEFAULT_GET_RESOLUTION,
     DEFAULT_LOCATE_RESOLUTION,
@@ -76,6 +77,7 @@ __all__ = [
     "CitationPageLocationParam",
     "ConfigurableRetry",
     "ContentBlockParam",
+    "ConversationCallback",
     "DEFAULT_GET_RESOLUTION",
     "DEFAULT_LOCATE_RESOLUTION",
     "GetSettings",

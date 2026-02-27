@@ -32,6 +32,7 @@ class ComputerMouseClickTool(ComputerBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     def __call__(self, mouse_button: MouseButton, number_of_clicks: int = 1) -> str:
         self.agent_os.click(mouse_button, number_of_clicks)

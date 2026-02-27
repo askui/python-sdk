@@ -1,12 +1,5 @@
 from fastapi import FastAPI
 from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from typing_extensions import Self
 
@@ -51,6 +44,31 @@ def setup_opentelemetry_tracing(app: FastAPI, settings: OtelSettings) -> None:
         None
 
     """
+    try:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import-not-found]
+            OTLPSpanExporter,
+        )
+        from opentelemetry.instrumentation.fastapi import (  # type: ignore[import-not-found]
+            FastAPIInstrumentor,
+        )
+        from opentelemetry.instrumentation.httpx import (  # type: ignore[import-not-found]
+            HTTPXClientInstrumentor,
+        )
+        from opentelemetry.instrumentation.sqlalchemy import (  # type: ignore[import-not-found]
+            SQLAlchemyInstrumentor,
+        )
+        from opentelemetry.sdk.resources import (  # type: ignore[import-not-found]
+            Resource,
+        )
+        from opentelemetry.sdk.trace import (  # type: ignore[import-not-found]
+            TracerProvider,
+        )
+        from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
+            BatchSpanProcessor,
+        )
+    except ImportError:
+        return
+
     resource = Resource.create(
         {
             "service.name": settings.service_name,

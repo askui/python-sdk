@@ -169,5 +169,6 @@ reports/
 /askui_chat.db-shm
 /askui_chat.db-wal
 .cache/
+.askui_cache/*
 
 bom.json

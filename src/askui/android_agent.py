@@ -9,6 +9,7 @@ from askui.agent_settings import AgentSettings
 from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.models import Point
+from askui.models.shared.conversation_callback import ConversationCallback
 from askui.models.shared.settings import ActSettings, MessageSettings
 from askui.models.shared.tools import Tool
 from askui.prompts.act_prompts import create_android_agent_prompt
@@ -63,7 +64,7 @@ class AndroidAgent(Agent):
         ```
     """
 
-    @telemetry.record_call(exclude={"reporters", "tools", "act_tools"})
+    @telemetry.record_call(exclude={"reporters", "tools", "act_tools", "callbacks"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def __init__(
         self,
@@ -72,6 +73,7 @@ class AndroidAgent(Agent):
         settings: AgentSettings | None = None,
         retry: Retry | None = None,
         act_tools: list[Tool] | None = None,
+        callbacks: list[ConversationCallback] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.os = PpadbAgentOs(device_identifier=device, reporter=reporter)
@@ -98,6 +100,7 @@ class AndroidAgent(Agent):
             + (act_tools or []),
             agent_os=self.os,
             settings=settings,
+            callbacks=callbacks,
         )
         self.act_tool_collection.add_agent_os(self.act_agent_os_facade)
         # Override default act settings with Android-specific settings

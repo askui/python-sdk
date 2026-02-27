@@ -58,6 +58,7 @@ class WaitTool(Tool):
             },
         )
         self._max_wait_time = max_wait_time
+        self.is_cacheable = True
 
     def __call__(self, wait_duration: int) -> str:
         """

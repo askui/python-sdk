@@ -66,8 +66,9 @@ class ReadFromFileTool(Tool):
                 "required": ["file_path"],
             },
         )
-        self._base_dir = base_dir
         self._encodings = encodings or ["utf-8", "latin-1"]
+        self._base_dir = Path(base_dir)
+        self.is_cacheable = True
 
     def __call__(self, file_path: str) -> str:
         """

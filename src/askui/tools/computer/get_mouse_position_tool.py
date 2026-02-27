@@ -12,6 +12,7 @@ class ComputerGetMousePositionTool(ComputerBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     def __call__(self) -> str:
         cursor_position = self.agent_os.get_mouse_position()

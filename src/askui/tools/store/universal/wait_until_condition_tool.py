@@ -87,6 +87,7 @@ class WaitUntilConditionTool(Tool):
         )
         self._condition_check = condition_check
         self._max_wait_time = max_wait_time
+        self.is_cacheable = True
 
     def __call__(self, max_wait_time: int, check_interval: int = 1) -> str:
         """

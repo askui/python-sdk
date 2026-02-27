@@ -69,6 +69,7 @@ class ComputerSaveScreenshotTool(ComputerBaseTool):
             },
         )
         self._base_dir = base_dir
+        self.is_cacheable = True
 
     def __call__(self, image_path: str) -> str:
         """

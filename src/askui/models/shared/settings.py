@@ -1,9 +1,15 @@
+from datetime import datetime
 from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
-from askui.models.shared.agent_message_param import ThinkingConfigParam, ToolChoiceParam
+from askui.models.shared.agent_message_param import (
+    ThinkingConfigParam,
+    ToolChoiceParam,
+    ToolUseBlockParam,
+    UsageParam,
+)
 from askui.models.shared.prompts import (
     ActSystemPrompt,
     GetSystemPrompt,
@@ -28,7 +34,9 @@ class Resolution(NamedTuple):
 DEFAULT_LOCATE_RESOLUTION = Resolution(1280, 800)
 DEFAULT_GET_RESOLUTION = Resolution(1280, 800)
 
-CACHING_STRATEGY = Literal["read", "write", "both", "no"]
+CACHING_STRATEGY = Literal["execute", "record", "both"]
+CACHE_PARAMETER_IDENTIFICATION_STRATEGY = Literal["llm", "preset"]
+CACHING_VISUAL_VERIFICATION_METHOD = Literal["phash", "ahash", "none"]
 
 
 class MessageSettings(BaseModel):
@@ -155,15 +163,99 @@ class LocateSettings(BaseModel):
     resolution: Resolution = DEFAULT_LOCATE_RESOLUTION
 
 
-class CachedExecutionToolSettings(BaseModel):
-    """Settings for executing cached action trajectories.
+class CacheFailure(BaseModel):
+    """Record of a single cache execution failure.
 
     Args:
-        delay_time_between_action (float): Delay in seconds between replaying
-            cached actions. Allows time for UI to respond. Default: 0.5.
+        timestamp: When the failure occurred
+        step_index: Index of the step that failed
+        error_message: Description of the failure
+        failure_count_at_step: Running count of failures at this step
     """
 
-    delay_time_between_action: float = 0.5
+    timestamp: datetime
+    step_index: int
+    error_message: str
+    failure_count_at_step: int
+
+
+class VisualValidationMetadata(BaseModel):
+    enabled: bool
+    method: CACHING_VISUAL_VERIFICATION_METHOD
+    region_size: int
+
+
+class CacheMetadata(BaseModel):
+    """Metadata for a cache file including execution history and validation state.
+
+    Args:
+        version: Cache format version
+        created_at: When the cache was created
+        goal: Original goal text (may be parameterized)
+        last_executed_at: When the cache was last executed
+        token_usage: Accumulated token usage from recording
+        execution_attempts: Total number of execution attempts
+        failures: List of recorded failures
+        is_valid: Whether cache is still valid
+        invalidation_reason: Why cache was invalidated (if applicable)
+        visual_validation: Visual validation configuration
+    """
+
+    version: str = "0.2"
+    created_at: datetime
+    goal: str | None = None
+    last_executed_at: datetime | None = None
+    token_usage: UsageParam | None = None
+    execution_attempts: int = 0
+    failures: list[CacheFailure] = Field(default_factory=list)
+    is_valid: bool = True
+    invalidation_reason: str | None = None
+    visual_validation: VisualValidationMetadata | None = None
+
+
+class CacheFile(BaseModel):
+    """Complete cache file structure with metadata and trajectory.
+
+    Args:
+        metadata: Cache metadata and execution history
+        trajectory: List of tool use blocks to execute
+        cache_parameters: Dict mapping parameter names to descriptions
+    """
+
+    metadata: CacheMetadata
+    trajectory: list[ToolUseBlockParam]
+    cache_parameters: dict[str, str] = Field(default_factory=dict)
+
+
+class CacheWritingSettings(BaseModel):
+    """Settings for recording cache files.
+
+    Args:
+        filename: Name for the cache file (auto-generated if empty)
+        parameter_identification_strategy: How to identify parameters("llm" or "preset")
+        llm_parameter_id_api_provider: API provider for LLM parameter identification
+        visual_verification_method: Visual hash method ("phash", "ahash", or "none")
+        visual_validation_region_size: Size of region to hash around coordinates
+    """
+
+    filename: str = ""
+    parameter_identification_strategy: CACHE_PARAMETER_IDENTIFICATION_STRATEGY = "llm"
+    visual_verification_method: CACHING_VISUAL_VERIFICATION_METHOD = "phash"
+    visual_validation_region_size: int = 100
+
+
+class CacheExecutionSettings(BaseModel):
+    """Settings for executing/replaying cached trajectories.
+
+    Args:
+        delay_time_between_actions: Delay in seconds between actions
+        skip_visual_validation: Override to disable visual validation
+        visual_validation_threshold: Max Hamming distance for validation
+    """
+
+    delay_time_between_actions: float = 1.0  # keep >1s to give UI time to materialize
+    skip_visual_validation: bool = False
+    visual_validation_threshold: int = 10
 
 
 class CachingSettings(BaseModel):
@@ -173,21 +265,18 @@ class CachingSettings(BaseModel):
     performance optimization.
 
     Args:
-        strategy (CACHING_STRATEGY): Caching mode. Options:
-            - "no": Caching disabled (default)
-            - "read": Replay actions from cache
-            - "write": Record actions to cache
-            - "both": Read from cache if available, otherwise record
+        strategy (CACHING_STRATEGY | None): Caching mode. Options:
+            - None: Caching disabled (default)
+            - "execute": Replay actions from cache
+            - "record": Record actions to cache
+            - "both": Execute from cache if available, otherwise record
         cache_dir (str): Directory path for storing cache files.
-            Default: ".cache".
-        filename (str): Name of the cache file. If empty, auto-generated.
-        execute_cached_trajectory_tool_settings (CachedExecutionToolSettings):
-            Settings for replaying cached actions.
+            Default: ".askui_cache".
+        writing_settings: Settings for cache recording (used in "record"/"both" modes)
+        execution_settings: Settings for cache playback (used in "execute"/"both" modes)
     """
 
-    strategy: CACHING_STRATEGY = "no"
-    cache_dir: str = ".cache"
-    filename: str = ""
-    execute_cached_trajectory_tool_settings: CachedExecutionToolSettings = (
-        CachedExecutionToolSettings()
-    )
+    strategy: CACHING_STRATEGY | None = None
+    cache_dir: str = ".askui_cache"
+    writing_settings: CacheWritingSettings | None = None
+    execution_settings: CacheExecutionSettings | None = None

@@ -80,6 +80,7 @@ class ToolUseBlockParam(BaseModel):
     name: str
     type: Literal["tool_use"] = "tool_use"
     cache_control: CacheControlEphemeralParam | None = None
+    visual_representation: str | None = None  # Visual hash for cache validation
 
 
 class BetaThinkingBlock(BaseModel):
@@ -114,10 +115,22 @@ ToolChoiceParam = dict[str, Any]
 ToolParam = dict[str, Any]
 
 
+class UsageParam(BaseModel):
+    """Token usage statistics from model API calls."""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
+
+
 class MessageParam(BaseModel):
+    """A message in a conversation."""
+
     role: Literal["user", "assistant"]
     content: str | list[ContentBlockParam]
     stop_reason: StopReason | None = None
+    usage: UsageParam | None = None
 
 
 __all__ = [
@@ -134,6 +147,7 @@ __all__ = [
     "ToolResultBlockParam",
     "ToolUseBlockParam",
     "UrlImageSourceParam",
+    "UsageParam",
     "ThinkingConfigParam",
     "ToolChoiceParam",
 ]

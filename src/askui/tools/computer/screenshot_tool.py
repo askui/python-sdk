@@ -14,6 +14,7 @@ class ComputerScreenshotTool(ComputerBaseTool):
             agent_os=agent_os,
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
+        self.is_cacheable = True
 
     def __call__(self) -> tuple[str, Image.Image]:
         screenshot = self.agent_os.screenshot()

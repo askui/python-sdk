@@ -123,6 +123,7 @@ Ready to build your first agent? Check out our documentation:
 9. **[Reporting](docs/08_reporting.md)** - Obtain agent logs as execution reports and summaries as test reports
 10. **[Observability](docs/09_observability_telemetry_tracing.md)** - Monitor and debug agents
 11. **[Extracting Data](docs/10_extracting_data.md)** - Extracting structured data from screenshots and files
+12. **[Callbacks](docs/11_callbacks.md)** - Inject custom logic into the control loop
 
 **Official documentation:** [docs.askui.com](https://docs.askui.com)
 

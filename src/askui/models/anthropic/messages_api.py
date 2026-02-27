@@ -46,6 +46,23 @@ def _is_retryable_error(exception: BaseException) -> bool:
     return isinstance(exception, (APIConnectionError, APITimeoutError, APIError))
 
 
+def _sanitize_message_for_api(message: MessageParam) -> dict[str, Any]:
+    """Remove non-API fields from a message before sending to Anthropic API.
+
+    Fields like `usage`, `stop_reason`, and `visual_representation` are used
+    internally but not accepted by the API.
+    """
+    msg_dict = message.model_dump(exclude={"stop_reason", "usage"})
+
+    # Remove visual_representation from tool_use blocks in content
+    if isinstance(msg_dict.get("content"), list):
+        for block in msg_dict["content"]:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                block.pop("visual_representation", None)
+
+    return msg_dict
+
+
 def built_messages_for_get_and_locate(
     scaled_image: Image, prompt: str
 ) -> list[MessageParam]:
@@ -140,7 +157,7 @@ class AnthropicMessagesApi(MessagesApi):
         provider_options: dict[str, Any] | None = None,
     ) -> MessageParam:
         _messages = [
-            cast("BetaMessageParam", message.model_dump(exclude={"stop_reason"}))
+            cast("BetaMessageParam", _sanitize_message_for_api(message))
             for message in messages
         ]
 

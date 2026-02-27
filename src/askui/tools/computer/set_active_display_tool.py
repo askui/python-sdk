@@ -21,6 +21,7 @@ class ComputerSetActiveDisplayTool(ComputerBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     def __call__(self, display_id: int) -> None:
         self.agent_os.set_display(display_id)

@@ -61,6 +61,7 @@ class PrintToConsoleTool(Tool):
             },
         )
         self._source_name = source_name
+        self.is_cacheable = False
 
     def __call__(self, content: str) -> str:
         """

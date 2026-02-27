@@ -24,6 +24,7 @@ class ComputerMouseHoldDownTool(ComputerBaseTool):
             },
             agent_os=agent_os,
         )
+        self.is_cacheable = True
 
     def __call__(self, mouse_button: MouseButton) -> str:
         self.agent_os.mouse_down(mouse_button)

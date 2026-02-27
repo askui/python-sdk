@@ -69,7 +69,8 @@ class ListFilesTool(Tool):
                 "required": [],
             },
         )
-        self._base_dir = base_dir
+        self._base_dir = Path(base_dir)
+        self.is_cacheable = True
 
     def __call__(self, directory_path: str = "", recursive: bool = False) -> str:
         """

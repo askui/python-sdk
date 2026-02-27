@@ -90,6 +90,9 @@ Understand what data is collected and how to opt out.
 ### 10 - Extracting Data
 **Topics**: Using `get()`, file support (PDF. Excel, Word, CSV), structured data extraction, response schemas
 
+### 11 - Callbacks
+**Topics**: Inject custom logic at different positions of the control loop through callbacks
+
 Extract information from screens and files using the `get()` method with Pydantic models.
 
 ## Additional Resources

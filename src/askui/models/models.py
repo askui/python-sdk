@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict
 
 from askui.locators.locators import Locator
 from askui.models.shared.agent_message_param import MessageParam
-from askui.models.shared.agent_on_message_cb import OnMessageCb
 from askui.models.shared.settings import ActSettings, GetSettings, LocateSettings
 from askui.models.shared.tools import ToolCollection
 from askui.models.types.geometry import Point, PointList
@@ -140,7 +139,6 @@ class ActModel(abc.ABC):
                 self,
                 messages: list[MessageParam],
                 model: str,
-                on_message: OnMessageCb | None = None,
                 tools: list[Tool] | None = None,
                 settings: AgentSettings | None = None,
             ) -> None:
@@ -155,7 +153,6 @@ class ActModel(abc.ABC):
         self,
         messages: list[MessageParam],
         act_settings: ActSettings,
-        on_message: OnMessageCb | None = None,
         tools: ToolCollection | None = None,
     ) -> None:
         """
@@ -174,14 +171,6 @@ class ActModel(abc.ABC):
         Args:
             messages (list[MessageParam]): The message history to start that
                 determines the actions and following messages.
-            on_message (OnMessageCb | None, optional): Callback for new messages
-                from either an assistant/agent or a user (including
-                automatic/programmatic tool use, e.g., taking a screenshot).
-                If it returns `None`, the acting is canceled and `act()` returns
-                immediately. If it returns a `MessageParam`, this `MessageParma` is
-                added to the message history and the acting continues based on the
-                message. The message may be modified by the callback to allow for
-                directing the assistant/agent or tool use.
             tools (ToolCollection | None, optional): The tools for the agent.
                 Defaults to `None`.
             act_settings (ActSettings): The settings for this act operation,

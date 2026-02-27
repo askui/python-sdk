@@ -40,6 +40,7 @@ class GetCurrentTimeTool(Tool):
                 "required": [],
             },
         )
+        self.is_cacheable = True
 
     def __call__(self) -> str:
         """
