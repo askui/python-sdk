@@ -110,5 +110,23 @@ _DEFAULT_PRICING.update(
             cache_write_cost_per_million_tokens=6.25,
             cache_read_cost_per_million_tokens=0.50,
         ),
+        "gpt-5.4": ModelPricing(
+            input_cost_per_million_tokens=2.5,
+            output_cost_per_million_tokens=15.0,
+            cache_write_cost_per_million_tokens=2.5,
+            cache_read_cost_per_million_tokens=0.25,
+        ),
+        "gpt-5.4-mini": ModelPricing(
+            input_cost_per_million_tokens=0.75,
+            output_cost_per_million_tokens=4.50,
+            cache_write_cost_per_million_tokens=0.75,
+            cache_read_cost_per_million_tokens=0.0075,
+        ),
+        "gpt-5.4-nano": ModelPricing(
+            input_cost_per_million_tokens=0.20,
+            output_cost_per_million_tokens=1.25,
+            cache_write_cost_per_million_tokens=0.20,
+            cache_read_cost_per_million_tokens=0.02,
+        ),
     }
 )

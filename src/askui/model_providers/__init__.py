@@ -12,6 +12,11 @@ Built-in providers:
 - `AnthropicVlmProvider` — VLM via direct Anthropic API
 - `AnthropicImageQAProvider` — image Q&A via direct Anthropic API
 - `GoogleImageQAProvider` — image Q&A via Google Gemini API (direct, no proxy)
+- `OpenAIVlmProvider` — VLM via any OpenAI-compatible API
+- `OpenAIImageQAProvider` — image Q&A via any OpenAI-compatible API
+- `OllamaVlmProvider` — VLM via local Ollama instance (OpenAI-compatible)
+- `OllamaImageQAProvider` — image Q&A via local Ollama instance (OpenAI-compatible)
+- `OpenAICompatibleVlmProvider` — VLM via OpenAI-compatible API with fixed URL
 """
 
 from askui.model_providers.anthropic_image_qa_provider import AnthropicImageQAProvider
@@ -22,6 +27,13 @@ from askui.model_providers.askui_vlm_provider import AskUIVlmProvider
 from askui.model_providers.detection_provider import DetectionProvider
 from askui.model_providers.google_image_qa_provider import GoogleImageQAProvider
 from askui.model_providers.image_qa_provider import ImageQAProvider
+from askui.model_providers.ollama_image_qa_provider import OllamaImageQAProvider
+from askui.model_providers.ollama_vlm_provider import OllamaVlmProvider
+from askui.model_providers.openai_compatible_vlm_provider import (
+    OpenAICompatibleVlmProvider,
+)
+from askui.model_providers.openai_image_qa_provider import OpenAIImageQAProvider
+from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
 from askui.model_providers.vlm_provider import VlmProvider
 from askui.utils.model_pricing import ModelPricing
 
@@ -35,5 +47,10 @@ __all__ = [
     "GoogleImageQAProvider",
     "ImageQAProvider",
     "ModelPricing",
+    "OllamaImageQAProvider",
+    "OllamaVlmProvider",
+    "OpenAIImageQAProvider",
+    "OpenAIVlmProvider",
+    "OpenAICompatibleVlmProvider",
     "VlmProvider",
 ]
