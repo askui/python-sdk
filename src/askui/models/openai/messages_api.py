@@ -223,11 +223,23 @@ def _parse_tool_calls(
     for tool_call in message.tool_calls:
         if not isinstance(tool_call, ChatCompletionMessageToolCall):
             continue
+        try:
+            arguments = json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Malformed JSON in tool call arguments, passing raw string",
+                extra={
+                    "tool_call_id": tool_call.id,
+                    "function": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
+                },
+            )
+            arguments = {"raw_arguments": tool_call.function.arguments}
         content_blocks.append(
             ToolUseBlockParam(
                 id=tool_call.id,
                 name=tool_call.function.name,
-                input=json.loads(tool_call.function.arguments),
+                input=arguments,
             )
         )
 
