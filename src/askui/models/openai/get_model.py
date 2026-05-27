@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING, Any
 
 import openai
 from openai import OpenAI
@@ -145,7 +145,7 @@ class OpenAIGetModel(GetModel):
         self,
         query: str,
         source: Source,
-        response_schema: Type[ResponseSchema] | None,
+        response_schema: type[ResponseSchema] | None,
         get_settings: GetSettings,
     ) -> ResponseSchema | str:
         if isinstance(source, (PdfSource, OfficeDocumentSource)):

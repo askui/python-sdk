@@ -1,7 +1,6 @@
 """OpenAIImageQAProvider — image Q&A via any OpenAI-compatible API."""
 
 from functools import cached_property
-from typing import Type
 
 from openai import OpenAI
 from typing_extensions import override
@@ -66,7 +65,7 @@ class OpenAIImageQAProvider(ImageQAProvider):
         self,
         query: str,
         source: Source,
-        response_schema: Type[ResponseSchema] | None,
+        response_schema: type[ResponseSchema] | None,
         get_settings: GetSettings,
     ) -> ResponseSchema | str:
         result: ResponseSchema | str = self._get_model.get(
