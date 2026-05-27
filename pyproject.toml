@@ -205,7 +205,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "tests/unit/locators/serializers/test_locator_string_representation.py" = ["E501"]
 "tests/unit/locators/test_locators.py" = ["E501"]
 "tests/unit/utils/test_image_utils.py" = ["E501"]
-"playground.py" = ["F401", "E501"]
 
 [tool.ruff.lint.flake8-quotes]
 docstring-quotes = "double"
