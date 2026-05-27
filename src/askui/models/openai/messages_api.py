@@ -290,7 +290,7 @@ class OpenAIMessagesApi(MessagesApi):
         thinking: ThinkingConfigParam | None = None,  # noqa: ARG002
         tool_choice: ToolChoiceParam | None = None,  # noqa: ARG002
         temperature: float | None = None,
-        provider_options: dict[str, Any] | None = None,  # noqa: ARG002
+        provider_options: dict[str, Any] | None = None,
     ) -> MessageParam:
         """Create a message via an OpenAI-compatible chat completions endpoint.
 
@@ -303,7 +303,9 @@ class OpenAIMessagesApi(MessagesApi):
             thinking: Ignored (not supported by the OpenAI chat API).
             tool_choice: Ignored.
             temperature: Sampling temperature.
-            provider_options: Ignored.
+            provider_options: Additional keyword arguments forwarded directly
+                to the OpenAI ``chat.completions.create`` call (e.g.
+                ``{"top_p": 0.9, "response_format": {...}}``).
 
         Returns:
             The model's response as a `MessageParam`.
@@ -327,6 +329,9 @@ class OpenAIMessagesApi(MessagesApi):
             openai_tools = _to_openai_tools(tools)
             if openai_tools:
                 kwargs["tools"] = openai_tools
+
+        if provider_options is not None:
+            kwargs.update(provider_options)
 
         response = self._client.chat.completions.create(**kwargs)
         return _from_openai_response(response)
