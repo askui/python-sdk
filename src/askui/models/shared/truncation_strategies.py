@@ -30,10 +30,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # needs to be below limits imposed by endpoint
-MAX_INPUT_TOKENS = 100_000
+MAX_INPUT_TOKENS = 200_000
 
 # we will truncate as soon as we reach this threshold
-TRUNCATION_THRESHOLD = 0.7
+TRUNCATION_THRESHOLD = 0.56
 
 # see https://docs.anthropic.com/en/api/messages#body-messages
 MAX_MESSAGES = 100_000
