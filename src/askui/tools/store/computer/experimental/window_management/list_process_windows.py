@@ -46,6 +46,7 @@ class ComputerListProcessWindowsTool(ComputerBaseTool):
         )
 
     def __call__(self, process_id: int) -> str:
+        process_id = int(process_id)
         get_window_list_result = self.agent_os.get_window_list(process_id)
         return (
             f"The Process ID: {process_id} has the"
