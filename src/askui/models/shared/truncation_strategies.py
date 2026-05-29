@@ -222,6 +222,7 @@ class TruncationStrategy(ABC):
     ) -> None:
         self._full_message_history: list[MessageParam] = []
         self._truncated_message_history: list[MessageParam] = []
+        self._first_user_message: MessageParam | None = None
         self._max_messages = max_messages
         self._absolute_truncation_threshold = int(
             max_input_tokens * truncation_threshold
@@ -261,6 +262,60 @@ class TruncationStrategy(ABC):
         """Force-truncate the message history."""
         ...
 
+    def _capture_first_user_message(self, message: MessageParam) -> None:
+        """Store the first user message if not already captured.
+
+        Args:
+            message: The message to check and potentially store.
+        """
+        if self._first_user_message is None and message.role == "user":
+            self._first_user_message = message
+
+    def _build_truncated_messages(
+        self,
+        summary: str,
+        recent: list[MessageParam],
+    ) -> list[MessageParam]:
+        """Build the new truncated history with the first user message preserved.
+
+        Prepends the original first user message (if captured),
+        adds the summary, ensures valid role alternation, and
+        appends the recent messages.
+
+        Args:
+            summary: The LLM-generated conversation summary.
+            recent: The most-recent messages to keep verbatim.
+
+        Returns:
+            The assembled message list.
+        """
+        new_messages: list[MessageParam] = []
+
+        if self._first_user_message is not None:
+            new_messages.append(self._first_user_message)
+            new_messages.append(
+                MessageParam(
+                    role="assistant",
+                    content="Understood. I'll keep your original instructions in mind.",
+                )
+            )
+
+        new_messages.append(MessageParam(role="user", content=summary))
+
+        if recent and recent[0].role == "user":
+            new_messages.append(
+                MessageParam(
+                    role="assistant",
+                    content=(
+                        "Understood. I'll continue based on "
+                        "the conversation summary above."
+                    ),
+                )
+            )
+
+        new_messages.extend(recent)
+        return new_messages
+
     def reset(self, messages: list[MessageParam] | None = None) -> None:
         """Reset message histories with optional initial messages.
 
@@ -274,9 +329,13 @@ class TruncationStrategy(ABC):
         if messages is not None:
             self._full_message_history = list(messages)
             self._truncated_message_history = list(messages)
+            self._first_user_message = next(
+                (m for m in messages if m.role == "user"), None
+            )
         else:
             self._full_message_history = []
             self._truncated_message_history = []
+            self._first_user_message = None
 
     @property
     def truncated_messages(self) -> list[MessageParam]:
@@ -360,6 +419,7 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
         Args:
             message: The message to append.
         """
+        self._capture_first_user_message(message)
         self._full_message_history.append(message)
         self._truncated_message_history.append(message)
 
@@ -443,27 +503,9 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
             return
 
         recent = self._truncated_message_history[cut:]
-
-        # Build new history with the summary as a user message
-        new_messages: list[MessageParam] = [
-            MessageParam(role="user", content=summary),
-        ]
-
-        # Ensure valid role alternation: if first recent message
-        # is also "user", insert a synthetic assistant ack.
-        if recent and recent[0].role == "user":
-            new_messages.append(
-                MessageParam(
-                    role="assistant",
-                    content=(
-                        "Understood. I'll continue based on "
-                        "the conversation summary above."
-                    ),
-                )
-            )
-
-        new_messages.extend(recent)
-        self._truncated_message_history = new_messages
+        self._truncated_message_history = self._build_truncated_messages(
+            summary, recent
+        )
         self._image_removal_boundary_index = None
 
     # ------------------------------------------------------------------
@@ -687,6 +729,7 @@ class SummarizingTruncationStrategy(TruncationStrategy):
         Args:
             message: The message to append.
         """
+        self._capture_first_user_message(message)
         self._full_message_history.append(message)
         self._truncated_message_history.append(message)
 
@@ -768,22 +811,6 @@ class SummarizingTruncationStrategy(TruncationStrategy):
             return
 
         recent = self._truncated_message_history[cut:]
-
-        new_messages: list[MessageParam] = [
-            MessageParam(role="user", content=summary),
-        ]
-
-        # Ensure valid role alternation
-        if recent and recent[0].role == "user":
-            new_messages.append(
-                MessageParam(
-                    role="assistant",
-                    content=(
-                        "Understood. I'll continue based on "
-                        "the conversation summary above."
-                    ),
-                )
-            )
-
-        new_messages.extend(recent)
-        self._truncated_message_history = new_messages
+        self._truncated_message_history = self._build_truncated_messages(
+            summary, recent
+        )
