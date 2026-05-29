@@ -46,6 +46,9 @@ class ComputerListProcessWindowsTool(ComputerBaseTool):
         )
 
     def __call__(self, process_id: int) -> str:
+        # the agent occassionally calls this tool with a string i/o an int
+        # this would lead to a tool error. to prevent this, we will convert to int
+        # manually here
         process_id = int(process_id)
         get_window_list_result = self.agent_os.get_window_list(process_id)
         return (
