@@ -326,16 +326,15 @@ class TruncationStrategy(ABC):
             messages: Initial messages to populate both histories.
                 If ``None``, both histories are cleared.
         """
+        self._first_user_message = None
         if messages is not None:
             self._full_message_history = list(messages)
             self._truncated_message_history = list(messages)
-            self._first_user_message = next(
-                (m for m in messages if m.role == "user"), None
-            )
+            for m in messages:
+                self._capture_first_user_message(m)
         else:
             self._full_message_history = []
             self._truncated_message_history = []
-            self._first_user_message = None
 
     @property
     def truncated_messages(self) -> list[MessageParam]:
