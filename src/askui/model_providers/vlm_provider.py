@@ -53,6 +53,15 @@ class VlmProvider(ABC):
         """
         return None
 
+    @property
+    def max_request_bytes(self) -> int | None:
+        """Hard cap on the serialized request body size, in bytes.
+        Returns ``None`` when the provider has no known/specific limit, in
+        which case callers fall back to a conservative default. Override in
+        subclasses backed by an endpoint with a known cap.
+        """
+        return None
+
     @abstractmethod
     def create_message(
         self,

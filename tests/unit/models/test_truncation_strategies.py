@@ -1,6 +1,9 @@
 """Unit tests for truncation strategies."""
 
+import logging
 from unittest.mock import MagicMock
+
+import pytest
 
 from askui.callbacks.conversation_callback import ConversationCallback
 from askui.models.shared.agent_message_param import (
@@ -14,9 +17,13 @@ from askui.models.shared.agent_message_param import (
     UrlImageSourceParam,
     UsageParam,
 )
+from askui.models.shared.request_size import (
+    estimate_messages_bytes,
+)
 from askui.models.shared.truncation_strategies import (
     SlidingImageWindowSummarizingTruncationStrategy,
     SummarizingTruncationStrategy,
+    _image_keep_count_for_byte_budget,
 )
 
 IMAGE_REMOVED_PLACEHOLDER = "[Screenshot removed to reduce message history length]"
@@ -27,10 +34,15 @@ IMAGE_REMOVED_PLACEHOLDER = "[Screenshot removed to reduce message history lengt
 # ---------------------------------------------------------------------------
 
 
-def _make_base64_image_block() -> ImageBlockParam:
+def _make_base64_image_block(data: str = "abc123") -> ImageBlockParam:
     return ImageBlockParam(
-        source=Base64ImageSourceParam(data="abc123", media_type="image/png"),
+        source=Base64ImageSourceParam(data=data, media_type="image/png"),
     )
+
+
+def _make_sized_image_block(n_bytes: int) -> ImageBlockParam:
+    """Base64 image whose estimated byte size is ``n_bytes``."""
+    return _make_base64_image_block(data="x" * n_bytes)
 
 
 def _make_url_image_block() -> ImageBlockParam:
@@ -56,6 +68,10 @@ def _make_vlm_provider(usage: UsageParam | None = None) -> MagicMock:
         content="Summary of the conversation.",
         usage=usage,
     )
+    # A bare MagicMock attribute is truthy; set None so byte-budget
+    # enforcement is skipped (no images stripped to meet a budget) unless
+    # a test configures an explicit limit.
+    provider.max_request_bytes = None
     return provider
 
 
@@ -923,8 +939,14 @@ class TestReporterIntegration:
             role = "user" if i % 2 == 0 else "assistant"
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
-        reporter.add_message.assert_called_once()
-        call_args = reporter.add_message.call_args
+        # Byte-budget debug messages (plain strings) may also be reported;
+        # the summary response is the one dict payload.
+        summary_calls = [
+            c for c in reporter.add_message.call_args_list
+            if isinstance(c.args[1], dict)
+        ]
+        assert len(summary_calls) == 1
+        call_args = summary_calls[0]
         assert call_args.args[0] == "TruncationStrategy"
         # Logged content is the raw VLM response dump
         assert call_args.args[1]["role"] == "assistant"
@@ -942,8 +964,14 @@ class TestReporterIntegration:
             role = "user" if i % 2 == 0 else "assistant"
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
-        reporter.add_message.assert_called_once()
-        call_args = reporter.add_message.call_args
+        # Byte-budget debug messages (plain strings) may also be reported;
+        # the summary response is the one dict payload.
+        summary_calls = [
+            c for c in reporter.add_message.call_args_list
+            if isinstance(c.args[1], dict)
+        ]
+        assert len(summary_calls) == 1
+        call_args = summary_calls[0]
         assert call_args.args[0] == "TruncationStrategy"
         assert call_args.args[1]["content"] == "Summary of the conversation."
 
@@ -1112,3 +1140,205 @@ class TestSummarizationRequestContext:
         assert call_kwargs["system"] is None
         assert call_kwargs["tools"] is None
         assert call_kwargs["provider_options"] is None
+
+
+# ---------------------------------------------------------------------------
+# Byte-budget enforcement
+# ---------------------------------------------------------------------------
+
+
+def _is_placeholder(block: ContentBlockParam) -> bool:
+    return isinstance(block, TextBlockParam) and block.text == IMAGE_REMOVED_PLACEHOLDER
+
+
+def _first_block(msg: MessageParam) -> ContentBlockParam:
+    assert isinstance(msg.content, list)
+    return msg.content[0]
+
+
+class TestByteBudgetHelpers:
+    """Direct tests of the keep-count math driving byte enforcement."""
+
+    def test_keep_all_when_under_budget(self) -> None:
+        msgs = [
+            MessageParam(role="user", content=[_make_sized_image_block(500)]),
+            MessageParam(role="user", content=[_make_sized_image_block(500)]),
+        ]
+        current = estimate_messages_bytes(msgs)
+        # Budget exactly equal to current => keep everything.
+        assert _image_keep_count_for_byte_budget(msgs, current, current) == 2
+
+    def test_drops_oldest_until_under_budget(self) -> None:
+        msgs = [
+            MessageParam(role="user", content=[_make_sized_image_block(500)]),
+            MessageParam(role="assistant", content=[_make_sized_image_block(500)]),
+            MessageParam(role="user", content=[_make_sized_image_block(500)]),
+        ]
+        current = estimate_messages_bytes(msgs)  # ~1500
+        # Only the newest image (~500) fits under 1000.
+        assert _image_keep_count_for_byte_budget(msgs, 1000, current) == 1
+
+    def test_drops_all_when_even_one_image_exceeds_budget(self) -> None:
+        msgs = [MessageParam(role="user", content=[_make_sized_image_block(500)])]
+        current = estimate_messages_bytes(msgs)
+        assert _image_keep_count_for_byte_budget(msgs, 100, current) == 0
+
+    def test_no_images_keeps_zero(self) -> None:
+        msgs = [MessageParam(role="user", content="x" * 500)]
+        assert _image_keep_count_for_byte_budget(msgs, 100, 500) == 0
+
+
+class TestSummarizingByteBudget:
+    """`SummarizingTruncationStrategy` strips oldest images on byte overflow."""
+
+    def _make(self, max_request_bytes: int) -> SummarizingTruncationStrategy:
+        return SummarizingTruncationStrategy(
+            vlm_provider=_make_vlm_provider(),
+            n_messages_to_keep=100,
+            # Keep token-based truncation out of the way.
+            max_input_tokens=10_000_000,
+            max_request_bytes=max_request_bytes,
+            # Treat max_request_bytes as the exact budget for these tests.
+            request_size_threshold=1.0,
+        )
+
+    def test_strips_oldest_images_when_over_budget(self) -> None:
+        strategy = self._make(max_request_bytes=1000)
+        for i in range(3):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_sized_image_block(500)])
+            )
+        msgs = strategy.truncated_messages
+        # Oldest two images replaced by placeholders, newest kept.
+        assert _is_placeholder(_first_block(msgs[0]))
+        assert _is_placeholder(_first_block(msgs[1]))
+        assert isinstance(_first_block(msgs[2]), ImageBlockParam)
+
+    def test_final_history_within_budget(self) -> None:
+        strategy = self._make(max_request_bytes=1000)
+        for i in range(5):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_sized_image_block(500)])
+            )
+        assert estimate_messages_bytes(strategy.truncated_messages) <= 1000
+
+    def test_no_stripping_when_under_budget(self) -> None:
+        strategy = self._make(max_request_bytes=10_000)
+        for i in range(3):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_sized_image_block(500)])
+            )
+        for msg in strategy.truncated_messages:
+            assert isinstance(_first_block(msg), ImageBlockParam)
+
+    def test_full_messages_keep_original_images(self) -> None:
+        strategy = self._make(max_request_bytes=1000)
+        for i in range(3):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_sized_image_block(500)])
+            )
+        # Full (append-only) history must retain every original image.
+        for msg in strategy.full_messages:
+            assert isinstance(_first_block(msg), ImageBlockParam)
+
+    def test_url_images_not_stripped(self) -> None:
+        strategy = self._make(max_request_bytes=1)
+        strategy.append_message(
+            MessageParam(role="user", content=[_make_url_image_block()])
+        )
+        # URL images carry no payload bytes and must never be stripped.
+        assert isinstance(_first_block(strategy.truncated_messages[0]), ImageBlockParam)
+
+    def test_warns_when_non_image_content_exceeds_budget(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        strategy = self._make(max_request_bytes=100)
+        with caplog.at_level(logging.WARNING):
+            strategy.append_message(MessageParam(role="user", content="x" * 500))
+        # Cannot strip text; logs a warning but preserves the message.
+        assert any("byte budget" in record.message for record in caplog.records)
+        assert strategy.truncated_messages[0].content == "x" * 500
+
+
+class TestRequestSizeThreshold:
+    """Stripping kicks in at ``max_request_bytes * request_size_threshold``."""
+
+    def test_strips_at_threshold_not_hard_limit(self) -> None:
+        # Hard limit 1000, threshold 0.8 => effective budget 800.
+        strategy = SummarizingTruncationStrategy(
+            vlm_provider=_make_vlm_provider(),
+            n_messages_to_keep=100,
+            max_input_tokens=10_000_000,
+            max_request_bytes=1000,
+            request_size_threshold=0.8,
+        )
+        # Two 500-byte images = ~1000 bytes: under the hard limit but over
+        # the 800-byte threshold, so the oldest image must be stripped.
+        for i in range(2):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_sized_image_block(500)])
+            )
+        msgs = strategy.truncated_messages
+        assert _is_placeholder(_first_block(msgs[0]))
+        assert isinstance(_first_block(msgs[1]), ImageBlockParam)
+        assert estimate_messages_bytes(msgs) <= 800
+
+    def test_default_threshold_is_80_percent(self) -> None:
+        strategy = SummarizingTruncationStrategy(max_request_bytes=1000)
+        assert strategy._request_size_threshold == 0.8  # noqa: SLF001
+        assert strategy._byte_budget() == 800  # noqa: SLF001
+
+
+class TestByteBudgetResolution:
+    """The byte limit is sourced from the provider unless overridden."""
+
+    def test_explicit_override_wins(self) -> None:
+        strategy = SummarizingTruncationStrategy(
+            max_request_bytes=1234,
+            request_size_threshold=1.0,
+        )
+        assert strategy._resolve_max_request_bytes() == 1234  # noqa: SLF001
+
+    def test_reads_limit_from_conversation_provider(self) -> None:
+        provider = MagicMock()
+        provider.max_request_bytes = 5_000_000
+        conversation = MagicMock()
+        conversation.vlm_provider = provider
+
+        strategy = SummarizingTruncationStrategy(request_size_threshold=1.0)
+        strategy.conversation = conversation
+        assert strategy._resolve_max_request_bytes() == 5_000_000  # noqa: SLF001
+
+    def test_resolves_to_none_when_provider_has_no_limit(self) -> None:
+        provider = MagicMock()
+        provider.max_request_bytes = None
+        conversation = MagicMock()
+        conversation.vlm_provider = provider
+
+        strategy = SummarizingTruncationStrategy(request_size_threshold=1.0)
+        strategy.conversation = conversation
+        assert strategy._resolve_max_request_bytes() is None  # noqa: SLF001
+        assert strategy._byte_budget() is None  # noqa: SLF001
+
+    def test_no_images_stripped_when_no_limit_defined(self) -> None:
+        # No explicit override and provider advertises no limit: byte-budget
+        # enforcement is skipped, so even large images are kept verbatim.
+        provider = _make_vlm_provider()  # max_request_bytes is None
+        strategy = SummarizingTruncationStrategy(
+            vlm_provider=provider,
+            n_messages_to_keep=100,
+            max_input_tokens=10_000_000,
+        )
+        for i in range(2):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_sized_image_block(5000)])
+            )
+        msgs = strategy.truncated_messages
+        assert isinstance(_first_block(msgs[0]), ImageBlockParam)
+        assert isinstance(_first_block(msgs[1]), ImageBlockParam)

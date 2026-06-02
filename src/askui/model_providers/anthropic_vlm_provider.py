@@ -15,6 +15,7 @@ from askui.models.shared.agent_message_param import (
     ToolChoiceParam,
 )
 from askui.models.shared.prompts import SystemPrompt
+from askui.models.shared.request_size import ANTHROPIC_MAX_REQUEST_BYTES
 from askui.models.shared.tools import ToolCollection
 from askui.utils.model_pricing import ModelPricing
 
@@ -103,6 +104,11 @@ class AnthropicVlmProvider(VlmProvider):
     @override
     def pricing(self) -> ModelPricing | None:
         return self._pricing
+
+    @property
+    @override
+    def max_request_bytes(self) -> int | None:
+        return ANTHROPIC_MAX_REQUEST_BYTES
 
     @cached_property
     def _messages_api(self) -> AnthropicMessagesApi:

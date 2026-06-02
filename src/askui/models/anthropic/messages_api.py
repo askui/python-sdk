@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Tuple, cast
 
 from anthropic import (
@@ -39,8 +40,14 @@ from askui.models.shared.agent_message_param import (
 )
 from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
+from askui.models.shared.request_size import (
+    ANTHROPIC_MAX_REQUEST_BYTES,
+    estimate_messages_bytes,
+)
 from askui.models.shared.tools import ToolCollection
 from askui.utils.image_utils import image_to_base64
+
+logger = logging.getLogger(__name__)
 
 
 def _is_retryable_error(exception: BaseException) -> bool:
@@ -193,6 +200,16 @@ class AnthropicMessagesApi(MessagesApi):
         temperature: float | None = None,
         provider_options: dict[str, Any] | None = None,
     ) -> MessageParam:
+        estimated_bytes = estimate_messages_bytes(messages)
+        if estimated_bytes > ANTHROPIC_MAX_REQUEST_BYTES:
+            logger.warning(
+                "Estimated request size ~%d bytes exceeds the Anthropic "
+                "limit of %d bytes; the request may be rejected with a 400. "
+                "Configure a truncation strategy with byte enforcement.",
+                estimated_bytes,
+                ANTHROPIC_MAX_REQUEST_BYTES,
+            )
+
         # convert each message to anthropic BetaMessageParam type
         _messages = [from_message_param(message) for message in messages]
 

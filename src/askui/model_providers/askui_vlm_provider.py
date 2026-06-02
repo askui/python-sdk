@@ -16,6 +16,7 @@ from askui.models.shared.agent_message_param import (
     ToolChoiceParam,
 )
 from askui.models.shared.prompts import SystemPrompt
+from askui.models.shared.request_size import ANTHROPIC_MAX_REQUEST_BYTES
 from askui.models.shared.tools import ToolCollection
 
 _DEFAULT_MODEL_ID = "claude-sonnet-4-6"
@@ -68,6 +69,11 @@ class AskUIVlmProvider(VlmProvider):
     @override
     def model_id(self) -> str:
         return self._model_id_value
+
+    @property
+    @override
+    def max_request_bytes(self) -> int | None:
+        return ANTHROPIC_MAX_REQUEST_BYTES
 
     @cached_property
     def _messages_api(self) -> AnthropicMessagesApi:

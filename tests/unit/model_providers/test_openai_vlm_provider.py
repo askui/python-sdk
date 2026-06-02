@@ -17,6 +17,12 @@ class TestOpenAIVlmProvider:
         provider = OpenAIVlmProvider(model_id="gpt-4o", api_key="sk-test")
         assert provider.pricing is None
 
+    def test_max_request_bytes_none_by_default(self) -> None:
+        # OpenAI-compatible providers do not advertise a byte limit, so
+        # callers fall back to a conservative default.
+        provider = OpenAIVlmProvider(model_id="gpt-4o", api_key="sk-test")
+        assert provider.max_request_bytes is None
+
     def test_injected_client_used(self) -> None:
         mock_client = MagicMock(spec=OpenAI)
         provider = OpenAIVlmProvider(model_id="gpt-4o", client=mock_client)

@@ -18,6 +18,9 @@ from askui.models.shared.agent_message_param import (
     ToolUseBlockParam,
 )
 from askui.models.shared.prompts import SystemPrompt
+from askui.models.shared.request_size import (
+    estimate_messages_bytes,
+)
 from askui.models.shared.token_counter import SimpleTokenCounter
 from askui.models.shared.tools import ToolCollection
 from askui.prompts.truncation import SUMMARIZE_INSTRUCTION_PROMPT
@@ -38,8 +41,177 @@ TRUNCATION_THRESHOLD = 0.56
 # see https://docs.anthropic.com/en/api/messages#body-messages
 MAX_MESSAGES = 100_000
 
+
+REQUEST_SIZE_THRESHOLD = 0.8
+
 IMAGE_REMOVED_PLACEHOLDER = "[Screenshot removed to reduce message history length]"
 """Text used to replace stripped base64 images."""
+
+_REMOVED_IMAGE_PLACEHOLDER_BYTES = len(IMAGE_REMOVED_PLACEHOLDER)
+
+
+def _base64_image_byte_sizes(messages: list[MessageParam]) -> list[int]:
+    """Byte sizes of every base64 image, in chronological order.
+
+    Recurses into ``ToolResultBlockParam`` content. URL-based images
+    are excluded as they carry no payload bytes.
+    """
+    sizes: list[int] = []
+    for msg in messages:
+        if isinstance(msg.content, str):
+            continue
+        for block in msg.content:
+            if isinstance(block, ImageBlockParam) and isinstance(
+                block.source, Base64ImageSourceParam
+            ):
+                sizes.append(len(block.source.data))
+            elif isinstance(block, ToolResultBlockParam) and isinstance(
+                block.content, list
+            ):
+                sizes.extend(
+                    len(nested.source.data)
+                    for nested in block.content
+                    if isinstance(nested, ImageBlockParam)
+                    and isinstance(nested.source, Base64ImageSourceParam)
+                )
+    return sizes
+
+
+def _count_base64_images(messages: list[MessageParam]) -> int:
+    """Count total base64 image blocks across messages."""
+    return len(_base64_image_byte_sizes(messages))
+
+
+def _strip_base64_images(
+    content: list[ContentBlockParam],
+    max_to_strip: int,
+) -> tuple[list[ContentBlockParam], int]:
+    """Strip up to ``max_to_strip`` base64 images from a content list.
+
+    Replaces base64 ``ImageBlockParam`` blocks (top-level and nested
+    inside ``ToolResultBlockParam``) with text placeholders. URL-based
+    images are never stripped.
+
+    Args:
+        content: The content blocks to process.
+        max_to_strip: Maximum number of images to strip.
+
+    Returns:
+        Tuple of (new content list, count stripped).
+    """
+    stripped = 0
+    new_content: list[ContentBlockParam] = []
+
+    for block in content:
+        if stripped >= max_to_strip:
+            new_content.append(block)
+            continue
+
+        if isinstance(block, ImageBlockParam) and isinstance(
+            block.source, Base64ImageSourceParam
+        ):
+            new_content.append(TextBlockParam(text=IMAGE_REMOVED_PLACEHOLDER))
+            stripped += 1
+        elif isinstance(block, ToolResultBlockParam) and isinstance(
+            block.content, list
+        ):
+            new_nested: list[TextBlockParam | ImageBlockParam] = []
+            for nested in block.content:
+                if (
+                    stripped < max_to_strip
+                    and isinstance(nested, ImageBlockParam)
+                    and isinstance(nested.source, Base64ImageSourceParam)
+                ):
+                    new_nested.append(TextBlockParam(text=IMAGE_REMOVED_PLACEHOLDER))
+                    stripped += 1
+                else:
+                    new_nested.append(nested)
+            new_content.append(
+                ToolResultBlockParam(
+                    tool_use_id=block.tool_use_id,
+                    content=new_nested,
+                    is_error=block.is_error,
+                    cache_control=block.cache_control,
+                )
+            )
+        else:
+            new_content.append(block)
+
+    return new_content, stripped
+
+
+def _strip_oldest_base64_images(
+    messages: list[MessageParam],
+    n_images_to_keep: int,
+) -> int | None:
+    """Replace oldest base64 images with placeholders in place.
+
+    Keeps the newest ``n_images_to_keep`` base64 images and walks from
+    the start of the history, replacing excess images (oldest first).
+
+    Args:
+        messages: The message history to mutate.
+        n_images_to_keep: Number of most-recent base64 images to retain.
+
+    Returns:
+        The index of the last message modified, or ``None`` if nothing
+        was stripped.
+    """
+    to_remove = _count_base64_images(messages) - n_images_to_keep
+    if to_remove <= 0:
+        return None
+
+    removed = 0
+    boundary: int | None = None
+    for i, msg in enumerate(messages):
+        if removed >= to_remove:
+            break
+        if isinstance(msg.content, str):
+            continue
+        new_content, removed_in_msg = _strip_base64_images(
+            msg.content, to_remove - removed
+        )
+        if removed_in_msg > 0:
+            messages[i] = MessageParam(
+                role=msg.role,
+                content=new_content,
+                stop_reason=msg.stop_reason,
+                usage=msg.usage,
+            )
+            boundary = i
+            removed += removed_in_msg
+    return boundary
+
+
+def _image_keep_count_for_byte_budget(
+    messages: list[MessageParam],
+    byte_budget: int,
+    current_bytes: int,
+) -> int:
+    """Smallest number of newest base64 images to keep within budget.
+
+    Oldest images are dropped first (their payload replaced by the small
+    placeholder) until the estimated request size falls to or below
+    ``byte_budget``. If dropping every image is still not enough, returns
+    ``0`` (strip all) and the caller falls back to summarization.
+
+    Args:
+        messages: The message history to inspect.
+        byte_budget: Maximum allowed estimated request size in bytes.
+        current_bytes: Current estimated request size in bytes.
+
+    Returns:
+        The target number of newest base64 images to keep (``>= 0``).
+    """
+    sizes = _base64_image_byte_sizes(messages)
+    freed = 0
+    keep = len(sizes)
+    for size in sizes:  # oldest first
+        if current_bytes - freed <= byte_budget:
+            break
+        freed += size - _REMOVED_IMAGE_PLACEHOLDER_BYTES
+        keep -= 1
+    return max(keep, 0)
 
 
 def _has_orphaned_tool_results(msg: MessageParam) -> bool:
@@ -212,6 +384,15 @@ class TruncationStrategy(ABC):
         max_input_tokens: Maximum input tokens for the endpoint.
         truncation_threshold: Fraction of `max_input_tokens`
             at which to truncate.
+        max_request_bytes: Hard cap on the serialized request size in
+            bytes. When ``None`` (default), it is read from the
+            conversation's `VlmProvider` (e.g. ~32 MB for Anthropic). If
+            no provider advertises a limit either, byte-budget enforcement
+            is skipped entirely (no images are stripped to meet a byte
+            budget). Set it to override the provider's value.
+        request_size_threshold: Fraction of `max_request_bytes` at
+            which to start stripping the oldest base64 images (newest
+            kept) so the request stays under the endpoint's byte limit.
     """
 
     def __init__(
@@ -219,11 +400,15 @@ class TruncationStrategy(ABC):
         max_messages: int = MAX_MESSAGES,
         max_input_tokens: int = MAX_INPUT_TOKENS,
         truncation_threshold: float = TRUNCATION_THRESHOLD,
+        max_request_bytes: int | None = None,
+        request_size_threshold: float = REQUEST_SIZE_THRESHOLD,
     ) -> None:
         self._full_message_history: list[MessageParam] = []
         self._truncated_message_history: list[MessageParam] = []
         self._first_user_message: MessageParam | None = None
         self._max_messages = max_messages
+        self._max_request_bytes = max_request_bytes
+        self._request_size_threshold = request_size_threshold
         self._absolute_truncation_threshold = int(
             max_input_tokens * truncation_threshold
         )
@@ -234,6 +419,45 @@ class TruncationStrategy(ABC):
         self.reporter: Reporter | None = None
         self.callbacks: list[ConversationCallback] = []
         self.conversation: "Conversation | None" = None
+
+    def _resolve_max_request_bytes(self) -> int | None:
+        """Resolve the endpoint's hard request byte limit.
+
+        Precedence: an explicit ``max_request_bytes`` override, then the
+        provider used for the outgoing request (the conversation's
+        ``vlm_provider``, falling back to this strategy's summarization
+        ``vlm_provider``).
+
+        Returns ``None`` when no limit is defined anywhere (no override and
+        no provider advertises one), in which case byte-budget enforcement
+        is skipped entirely (no images are stripped to meet a byte budget).
+        """
+        if self._max_request_bytes is not None:
+            return self._max_request_bytes
+        providers = (
+            self.conversation.vlm_provider if self.conversation else None,
+            self.vlm_provider,
+        )
+        for provider in providers:
+            if provider is not None and provider.max_request_bytes is not None:
+                return provider.max_request_bytes
+        return None
+
+    def _byte_budget(self) -> int | None:
+        """Effective byte budget: hard limit scaled by the threshold.
+
+        Returns ``None`` when no hard limit is defined, signalling that
+        byte-budget enforcement should be skipped.
+        """
+        max_request_bytes = self._resolve_max_request_bytes()
+        if max_request_bytes is None:
+            return None
+        return int(max_request_bytes * self._request_size_threshold)
+
+    def _report(self, content: str) -> None:
+        """Send a debug message to the reporter if one is attached."""
+        if self.reporter:
+            self.reporter.add_message("TruncationStrategy", content)
 
     def _summarization_request_context(
         self,
@@ -261,6 +485,74 @@ class TruncationStrategy(ABC):
     def truncate(self) -> None:
         """Force-truncate the message history."""
         ...
+
+    def _enforce_byte_budget(self) -> int | None:
+        """Strip oldest base64 images until within the byte budget.
+
+        When no hard limit is defined (no `max_request_bytes` override and
+        no provider advertises one), `_byte_budget` returns ``None`` and
+        enforcement is skipped entirely: no images are stripped.
+        Returns:
+            The index of the last message modified, or ``None`` if the
+            history was already within budget, or no budget is defined
+            (no change made).
+        """
+        budget = self._byte_budget()
+        if budget is None:
+            self._report(
+                "[byte budget] no request byte limit defined, "
+                "skipping byte-budget enforcement"
+            )
+            return None
+
+        current = estimate_messages_bytes(self._truncated_message_history)
+        n_images = _count_base64_images(self._truncated_message_history)
+        self._report(
+            f"[byte budget] start: current={current} bytes, "
+            f"budget={budget} bytes, images={n_images}, "
+            f"messages={len(self._truncated_message_history)}"
+        )
+
+        if current <= budget:
+            self._report(
+                f"[byte budget] within budget ({current} <= {budget}), "
+                "no images stripped"
+            )
+            return None
+
+        keep = _image_keep_count_for_byte_budget(
+            self._truncated_message_history,
+            budget,
+            current,
+        )
+        self._report(
+            f"[byte budget] over budget ({current} > {budget}), "
+            f"keeping {keep}/{n_images} newest images, "
+            f"stripping {n_images - keep} oldest"
+        )
+
+        boundary = _strip_oldest_base64_images(self._truncated_message_history, keep)
+        new_size = estimate_messages_bytes(self._truncated_message_history)
+        if new_size > budget:
+            warn_msg = (
+                f"Request still ~{new_size} bytes after stripping images "
+                f"(budget {budget}); non-image content exceeds the byte "
+                "budget. Relying on summarization to reduce it further."
+            )
+            logger.warning(warn_msg)
+            self._report(warn_msg)
+        elif boundary is not None:
+            info_msg = (
+                f"Stripped old images to meet byte budget: "
+                f"{current} -> {new_size} bytes (budget {budget})"
+            )
+            logger.info(info_msg)
+            self._report(info_msg)
+        self._report(
+            f"[byte budget] done: new size={new_size} bytes, "
+            f"boundary index={boundary}"
+        )
+        return boundary
 
     def _capture_first_user_message(self, message: MessageParam) -> None:
         """Store the first user message if not already captured.
@@ -514,119 +806,17 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
     def _remove_images(self) -> None:
         """Strip old base64 images from truncated history.
 
-        Walks from the beginning and replaces excess base64
-        `ImageBlockParam` blocks with text placeholders.  Also
-        recurses into `ToolResultBlockParam.content` lists.
-        URL-based images are never stripped.
+        Keeps the newest `n_images_to_keep` base64 images and replaces
+        older ones with text placeholders, recursing into
+        `ToolResultBlockParam.content` lists. URL-based images are
+        never stripped. Updates `_image_removal_boundary_index` to the
+        last message modified.
         """
-        total = self._count_base64_images(self._truncated_message_history)
-        to_remove = total - self._n_images_to_keep
-        if to_remove <= 0:
-            return
-
-        removed = 0
-        for i, msg in enumerate(self._truncated_message_history):
-            if removed >= to_remove:
-                break
-            if isinstance(msg.content, str):
-                continue
-
-            new_content, removed_in_msg = self._strip_base64_images(
-                msg.content, to_remove - removed
-            )
-            if removed_in_msg > 0:
-                self._truncated_message_history[i] = MessageParam(
-                    role=msg.role,
-                    content=new_content,
-                    stop_reason=msg.stop_reason,
-                    usage=msg.usage,
-                )
-                self._image_removal_boundary_index = i
-                removed += removed_in_msg
-
-    @staticmethod
-    def _count_base64_images(
-        messages: list[MessageParam],
-    ) -> int:
-        """Count total base64 image blocks across messages."""
-        count = 0
-        for msg in messages:
-            if isinstance(msg.content, str):
-                continue
-            for block in msg.content:
-                if isinstance(block, ImageBlockParam) and isinstance(
-                    block.source, Base64ImageSourceParam
-                ):
-                    count += 1
-                elif isinstance(block, ToolResultBlockParam) and isinstance(
-                    block.content, list
-                ):
-                    for nested in block.content:
-                        if isinstance(nested, ImageBlockParam) and isinstance(
-                            nested.source,
-                            Base64ImageSourceParam,
-                        ):
-                            count += 1
-        return count
-
-    @staticmethod
-    def _strip_base64_images(
-        content: list[ContentBlockParam],
-        max_to_strip: int,
-    ) -> tuple[list[ContentBlockParam], int]:
-        """Strip up to `max_to_strip` base64 images.
-
-        Args:
-            content: The content blocks to process.
-            max_to_strip: Maximum number of images to strip.
-
-        Returns:
-            Tuple of (new content list, count stripped).
-        """
-        stripped = 0
-        new_content: list[ContentBlockParam] = []
-
-        for block in content:
-            if stripped >= max_to_strip:
-                new_content.append(block)
-                continue
-
-            if isinstance(block, ImageBlockParam) and isinstance(
-                block.source, Base64ImageSourceParam
-            ):
-                new_content.append(TextBlockParam(text=IMAGE_REMOVED_PLACEHOLDER))
-                stripped += 1
-            elif isinstance(block, ToolResultBlockParam) and isinstance(
-                block.content, list
-            ):
-                new_nested: list[TextBlockParam | ImageBlockParam] = []
-                for nested in block.content:
-                    if (
-                        stripped < max_to_strip
-                        and isinstance(nested, ImageBlockParam)
-                        and isinstance(
-                            nested.source,
-                            Base64ImageSourceParam,
-                        )
-                    ):
-                        new_nested.append(
-                            TextBlockParam(text=IMAGE_REMOVED_PLACEHOLDER)
-                        )
-                        stripped += 1
-                    else:
-                        new_nested.append(nested)
-                new_content.append(
-                    ToolResultBlockParam(
-                        tool_use_id=block.tool_use_id,
-                        content=new_nested,
-                        is_error=block.is_error,
-                        cache_control=block.cache_control,
-                    )
-                )
-            else:
-                new_content.append(block)
-
-        return new_content, stripped
+        boundary = _strip_oldest_base64_images(
+            self._truncated_message_history, self._n_images_to_keep
+        )
+        if boundary is not None:
+            self._image_removal_boundary_index = boundary
 
     # ------------------------------------------------------------------
     # Cache breakpoints
@@ -673,11 +863,17 @@ class SummarizingTruncationStrategy(TruncationStrategy):
     """Truncation strategy that summarizes when limits are hit.
 
     Unlike `SlidingImageWindowSummarizingTruncationStrategy`,
-    this strategy does **not** strip images. It places a
-    single cache breakpoint on the last user message (moving
-    it forward on each append) and summarizes the conversation
-    history via the VLM when the token or message count
-    exceeds the configured threshold.
+    this strategy does **not** strip images on a sliding window.
+    It places a single cache breakpoint on the last user message
+    (moving it forward on each append) and summarizes the
+    conversation history via the VLM when the token or message
+    count exceeds the configured threshold.
+
+    Images are only stripped as a last-resort safeguard: if the
+    estimated serialized request size exceeds `max_request_bytes`
+    (the endpoint rejects requests above ~32 MB), the oldest base64
+    images are dropped — newest kept — to bring the request back
+    under the limit before it is sent.
 
     Conversation-owned dependencies (``vlm_provider``, ``reporter``,
     ``callbacks``, ``conversation``) are auto-injected by
@@ -694,6 +890,14 @@ class SummarizingTruncationStrategy(TruncationStrategy):
             endpoint.
         truncation_threshold: Fraction of `max_input_tokens`
             at which to truncate.
+        max_request_bytes: Hard cap on the serialized request size in
+            bytes. When ``None`` (default), it is read from the
+            conversation's `VlmProvider` (e.g. ~32 MB for Anthropic). If
+            no provider advertises a limit either, byte-budget enforcement
+            is skipped entirely (no images are stripped to meet a budget).
+        request_size_threshold: Fraction of `max_request_bytes` at
+            which the oldest base64 images are stripped to keep the
+            request under the endpoint's byte limit.
         vlm_provider: Optional override for the summarization
             VLM. When ``None`` (default), the conversation's
             ``vlm_provider`` is used.
@@ -705,12 +909,16 @@ class SummarizingTruncationStrategy(TruncationStrategy):
         max_messages: int = MAX_MESSAGES,
         max_input_tokens: int = MAX_INPUT_TOKENS,
         truncation_threshold: float = TRUNCATION_THRESHOLD,
+        max_request_bytes: int | None = None,
+        request_size_threshold: float = REQUEST_SIZE_THRESHOLD,
         vlm_provider: VlmProvider | None = None,
     ) -> None:
         super().__init__(
             max_messages,
             max_input_tokens,
             truncation_threshold,
+            max_request_bytes,
+            request_size_threshold,
         )
         self.vlm_provider = vlm_provider
         self._n_messages_to_keep = n_messages_to_keep
@@ -732,6 +940,11 @@ class SummarizingTruncationStrategy(TruncationStrategy):
         self._full_message_history.append(message)
         self._truncated_message_history.append(message)
 
+        # Enforce the request byte budget first so the summarization
+        # request itself stays under the endpoint's hard byte limit.
+        # Strips oldest images only if the history exceeds the budget.
+        self._enforce_byte_budget()
+
         # Move cache breakpoint to last user message
         self._move_cache_breakpoint()
 
@@ -743,6 +956,12 @@ class SummarizingTruncationStrategy(TruncationStrategy):
             or token_counts.total > self._absolute_truncation_threshold
         ):
             self.truncate()
+            # Summarization re-inserts the original first user message,
+            # which may carry a large image; re-enforce so the final
+            # history stays under budget, then re-place the breakpoint
+            # on the rebuilt history.
+            self._enforce_byte_budget()
+            self._move_cache_breakpoint()
 
     def _move_cache_breakpoint(self) -> None:
         """Place a cache breakpoint on the last user message.
