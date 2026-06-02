@@ -320,9 +320,13 @@ class TestTruncation:
         # Force truncation
         strategy.truncate()
         msgs = strategy.truncated_messages
-        # First message should be the summary (user role)
+        # First message is the preserved original first user message
         assert msgs[0].role == "user"
-        assert msgs[0].content == "Summary of the conversation."
+        assert msgs[0].content == "msg 0"
+        # Then assistant ack, then summary
+        assert msgs[1].role == "assistant"
+        assert msgs[2].role == "user"
+        assert msgs[2].content == "Summary of the conversation."
         # Last 2 messages preserved
         assert msgs[-1].content == "msg 5"
         assert msgs[-2].content == "msg 4"
@@ -335,12 +339,14 @@ class TestTruncation:
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
         msgs = strategy.truncated_messages
-        # Summary (user) -> msgs[-2] is "msg 4" (user)
-        # So a synthetic assistant should be inserted between
-        assert msgs[0].role == "user"  # summary
-        assert msgs[1].role == "assistant"  # synthetic
-        assert "Understood" in str(msgs[1].content)
-        assert msgs[2].role == "user"  # msg 4
+        # First user message preserved, then ack, then summary
+        assert msgs[0].role == "user"  # original first user message
+        assert msgs[0].content == "msg 0"
+        assert msgs[1].role == "assistant"  # ack for first user message
+        assert msgs[2].role == "user"  # summary
+        assert msgs[3].role == "assistant"  # synthetic ack for alternation
+        assert "Understood" in str(msgs[3].content)
+        assert msgs[4].role == "user"  # msg 4
 
     def test_truncate_skips_when_too_few_messages(self) -> None:
         strategy = _make_strategy(n_messages_to_keep=10)
@@ -382,14 +388,14 @@ class TestTruncation:
     def test_full_messages_preserved_after_truncation(self) -> None:
         vlm = _make_vlm_provider()
         strategy = _make_strategy(vlm_provider=vlm, n_messages_to_keep=2)
-        for i in range(6):
+        for i in range(10):
             role = "user" if i % 2 == 0 else "assistant"
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
-        # Full messages should still have all 6
-        assert len(strategy.full_messages) == 6
+        # Full messages should still have all 10
+        assert len(strategy.full_messages) == 10
         # Truncated messages should be shorter
-        assert len(strategy.truncated_messages) < 6
+        assert len(strategy.truncated_messages) < 10
 
     def test_truncate_preserves_tool_use_tool_result_pairs(self) -> None:
         vlm = _make_vlm_provider()
@@ -505,6 +511,91 @@ class TestTruncation:
         )
         strategy.truncate()
         vlm.create_message.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# First user message preservation
+# ---------------------------------------------------------------------------
+
+
+class TestFirstUserMessagePreservation:
+    """Both strategies must always keep the original first user message."""
+
+    def test_sliding_preserves_first_user_message(self) -> None:
+        vlm = _make_vlm_provider()
+        strategy = _make_strategy(vlm_provider=vlm, n_messages_to_keep=2)
+        for i in range(6):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
+        strategy.truncate()
+        msgs = strategy.truncated_messages
+        assert msgs[0].role == "user"
+        assert msgs[0].content == "msg 0"
+
+    def test_summarizing_preserves_first_user_message(self) -> None:
+        vlm = _make_vlm_provider()
+        strategy = _make_summarizing_strategy(vlm_provider=vlm, n_messages_to_keep=2)
+        for i in range(6):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
+        strategy.truncate()
+        msgs = strategy.truncated_messages
+        assert msgs[0].role == "user"
+        assert msgs[0].content == "msg 0"
+
+    def test_first_user_message_survives_multiple_truncations(self) -> None:
+        vlm = _make_vlm_provider()
+        strategy = _make_summarizing_strategy(vlm_provider=vlm, n_messages_to_keep=2)
+        for i in range(6):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
+        strategy.truncate()
+        # Add more messages and truncate again
+        for i in range(6, 12):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
+        strategy.truncate()
+        msgs = strategy.truncated_messages
+        # Original first user message must still be at position 0
+        assert msgs[0].role == "user"
+        assert msgs[0].content == "msg 0"
+
+    def test_first_user_message_captured_from_reset(self) -> None:
+        vlm = _make_vlm_provider()
+        strategy = _make_summarizing_strategy(vlm_provider=vlm, n_messages_to_keep=2)
+        initial_msgs = [
+            MessageParam(role="user", content="initial task"),
+            MessageParam(role="assistant", content="ok"),
+        ]
+        strategy.reset(initial_msgs)
+        for i in range(6):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
+        strategy.truncate()
+        msgs = strategy.truncated_messages
+        assert msgs[0].role == "user"
+        assert msgs[0].content == "initial task"
+
+    def test_first_user_message_cleared_on_none_reset(self) -> None:
+        strategy = _make_summarizing_strategy()
+        strategy.append_message(MessageParam(role="user", content="first"))
+        strategy.reset()
+        assert strategy._first_user_message is None  # noqa: SLF001
+
+    def test_role_alternation_valid_after_truncation(self) -> None:
+        """Verify user/assistant roles alternate correctly after truncation."""
+        vlm = _make_vlm_provider()
+        strategy = _make_summarizing_strategy(vlm_provider=vlm, n_messages_to_keep=2)
+        for i in range(6):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
+        strategy.truncate()
+        msgs = strategy.truncated_messages
+        for i in range(len(msgs) - 1):
+            assert msgs[i].role != msgs[i + 1].role, (
+                f"Adjacent messages at {i} and {i + 1} have the same role: "
+                f"{msgs[i].role}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -670,8 +761,13 @@ class TestSummarizingTruncation:
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
         msgs = strategy.truncated_messages
+        # First message is the preserved original first user message
         assert msgs[0].role == "user"
-        assert msgs[0].content == "Summary of the conversation."
+        assert msgs[0].content == "msg 0"
+        # Then assistant ack, then summary
+        assert msgs[1].role == "assistant"
+        assert msgs[2].role == "user"
+        assert msgs[2].content == "Summary of the conversation."
         assert msgs[-1].content == "msg 5"
         assert msgs[-2].content == "msg 4"
 
@@ -683,9 +779,13 @@ class TestSummarizingTruncation:
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
         msgs = strategy.truncated_messages
+        # First user message preserved, then ack, then summary
         assert msgs[0].role == "user"
+        assert msgs[0].content == "msg 0"
         assert msgs[1].role == "assistant"
-        assert "Understood" in str(msgs[1].content)
+        assert msgs[2].role == "user"  # summary
+        assert msgs[3].role == "assistant"  # synthetic ack
+        assert "Understood" in str(msgs[3].content)
 
     def test_truncate_skips_when_too_few_messages(self) -> None:
         strategy = _make_summarizing_strategy(n_messages_to_keep=10)
@@ -698,12 +798,12 @@ class TestSummarizingTruncation:
     def test_full_messages_preserved_after_truncation(self) -> None:
         vlm = _make_vlm_provider()
         strategy = _make_summarizing_strategy(vlm_provider=vlm, n_messages_to_keep=2)
-        for i in range(6):
+        for i in range(10):
             role = "user" if i % 2 == 0 else "assistant"
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
-        assert len(strategy.full_messages) == 6
-        assert len(strategy.truncated_messages) < 6
+        assert len(strategy.full_messages) == 10
+        assert len(strategy.truncated_messages) < 10
 
     def test_preserves_tool_use_tool_result_pairs(self) -> None:
         vlm = _make_vlm_provider()
@@ -858,7 +958,9 @@ class TestReporterIntegration:
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         # Should not crash even though no reporter is set
         strategy.truncate()
-        assert strategy.truncated_messages[0].content == "Summary of the conversation."
+        # First message is preserved original, summary is at index 2
+        assert strategy.truncated_messages[0].content == "msg 0"
+        assert strategy.truncated_messages[2].content == "Summary of the conversation."
 
 
 class TestCallbackIntegration:
@@ -926,7 +1028,9 @@ class TestCallbackIntegration:
             role = "user" if i % 2 == 0 else "assistant"
             strategy.append_message(MessageParam(role=role, content=f"msg {i}"))
         strategy.truncate()
-        assert strategy.truncated_messages[0].content == "Summary of the conversation."
+        # First message is preserved original, summary is at index 2
+        assert strategy.truncated_messages[0].content == "msg 0"
+        assert strategy.truncated_messages[2].content == "Summary of the conversation."
 
 
 class TestSummarizationRequestContext:
