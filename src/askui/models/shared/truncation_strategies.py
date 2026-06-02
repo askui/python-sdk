@@ -549,8 +549,7 @@ class TruncationStrategy(ABC):
             logger.info(info_msg)
             self._report(info_msg)
         self._report(
-            f"[byte budget] done: new size={new_size} bytes, "
-            f"boundary index={boundary}"
+            f"[byte budget] done: new size={new_size} bytes, boundary index={boundary}"
         )
         return boundary
 

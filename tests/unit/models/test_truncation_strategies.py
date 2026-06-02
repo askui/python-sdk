@@ -942,7 +942,8 @@ class TestReporterIntegration:
         # Byte-budget debug messages (plain strings) may also be reported;
         # the summary response is the one dict payload.
         summary_calls = [
-            c for c in reporter.add_message.call_args_list
+            c
+            for c in reporter.add_message.call_args_list
             if isinstance(c.args[1], dict)
         ]
         assert len(summary_calls) == 1
@@ -967,7 +968,8 @@ class TestReporterIntegration:
         # Byte-budget debug messages (plain strings) may also be reported;
         # the summary response is the one dict payload.
         summary_calls = [
-            c for c in reporter.add_message.call_args_list
+            c
+            for c in reporter.add_message.call_args_list
             if isinstance(c.args[1], dict)
         ]
         assert len(summary_calls) == 1
