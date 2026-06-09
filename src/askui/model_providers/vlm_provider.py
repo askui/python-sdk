@@ -8,9 +8,15 @@ from askui.models.shared.agent_message_param import (
     ThinkingConfigParam,
     ToolChoiceParam,
 )
+from askui.models.shared.coordinate_space import (
+    PixelCoordinateSpace,
+    VlmCoordinateSpace,
+)
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.model_pricing import ModelPricing
+
+_DEFAULT_COORDINATE_SPACE = PixelCoordinateSpace()
 
 
 class VlmProvider(ABC):
@@ -45,6 +51,17 @@ class VlmProvider(ABC):
         """The model identifier used by this provider."""
 
     @property
+    def coordinate_space(self) -> VlmCoordinateSpace:
+        """The coordinate space this model emits coordinates in.
+
+        Returns a `VlmCoordinateSpace` describing the grid the model uses.
+        The default is `PixelCoordinateSpace` (native pixel coordinates).
+        Override in subclasses when the model uses a different grid
+        (e.g. ``ScaledCoordinateSpace(1000, 1000)`` for Qwen).
+        """
+        return _DEFAULT_COORDINATE_SPACE
+
+    @property
     def pricing(self) -> ModelPricing | None:
         """Pricing information for this provider's model.
 
@@ -52,6 +69,20 @@ class VlmProvider(ABC):
         Override in subclasses to provide model-specific pricing.
         """
         return None
+
+    def augment_system_prompt(self, system: SystemPrompt) -> SystemPrompt:
+        """Hook for providers to augment the system prompt before sending.
+
+        Called by ``create_message()`` implementations.  The base
+        implementation returns the prompt unchanged.  Override in
+        subclasses that need to inject provider-specific information
+        (e.g. coordinate bounds for non-Anthropic models).
+
+        The original ``SystemPrompt`` object is **not** mutated —
+        implementations should create a new ``SystemPrompt`` wrapping
+        the augmented text.
+        """
+        return system
 
     @abstractmethod
     def create_message(

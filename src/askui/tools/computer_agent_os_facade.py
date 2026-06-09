@@ -2,6 +2,10 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from askui.models.shared.coordinate_space import (
+    SCREENSHOT_RESOLUTION,
+    VlmCoordinateSpace,
+)
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import (
     AgentOs,
@@ -36,9 +40,14 @@ class ComputerAgentOsFacade(AgentOs):
     and back to the real screen resolution.
     """
 
-    def __init__(self, agent_os: AgentOs) -> None:
+    def __init__(
+        self,
+        agent_os: AgentOs,
+        coordinate_space: VlmCoordinateSpace,
+    ) -> None:
         self._agent_os = agent_os
-        self._target_resolution: tuple[int, int] = (1024, 768)
+        self._target_resolution: tuple[int, int] = SCREENSHOT_RESOLUTION
+        self._coordinate_space: VlmCoordinateSpace = coordinate_space
         self._real_screen_resolution: DisplaySize | None = None
         self.tags.append(ToolTags.SCALED_AGENT_OS.value)
 
@@ -57,7 +66,7 @@ class ComputerAgentOsFacade(AgentOs):
         )
         return scale_image_to_fit(screenshot, self._target_resolution)
 
-    def mouse_move(self, x: int, y: int, duration: int = 500) -> None:
+    def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
         scaled_x, scaled_y = self._scale_coordinates_back(x, y)
         self._agent_os.mouse_move(scaled_x, scaled_y, duration)
 
@@ -68,7 +77,7 @@ class ComputerAgentOsFacade(AgentOs):
         )
         return Coordinate(x=scaled_x, y=scaled_y)
 
-    def set_mouse_position(self, x: int, y: int) -> None:
+    def set_mouse_position(self, x: float, y: float) -> None:
         scaled_x, scaled_y = self._scale_coordinates_back(x, y)
         self._agent_os.set_mouse_position(scaled_x, scaled_y)
 
@@ -302,15 +311,22 @@ class ComputerAgentOsFacade(AgentOs):
 
     def _scale_coordinates_back(
         self,
-        x: int,
-        y: int,
+        x: float,
+        y: float,
         from_agent: bool = True,
         check_coordinates_in_bounds: bool = True,
     ) -> tuple[int, int]:
         if self._real_screen_resolution is None:
             self._real_screen_resolution = self._agent_os.retrieve_active_display().size
+
+        mapped_x, mapped_y = (
+            self._coordinate_space.map_to_target(x, y, self._target_resolution)
+            if from_agent
+            else (int(x), int(y))
+        )
+
         return scale_coordinates(
-            (x, y),
+            (mapped_x, mapped_y),
             (self._real_screen_resolution.width, self._real_screen_resolution.height),
             self._target_resolution,
             inverse=from_agent,

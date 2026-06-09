@@ -2,6 +2,10 @@ from typing import List, Optional, Tuple
 
 from PIL import Image
 
+from askui.models.shared.coordinate_space import (
+    SCREENSHOT_RESOLUTION,
+    VlmCoordinateSpace,
+)
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.android.agent_os import ANDROID_KEY, AndroidAgentOs, AndroidDisplay
 from askui.tools.android.uiautomator_hierarchy import UIElementCollection
@@ -15,9 +19,14 @@ class AndroidAgentOsFacade(AndroidAgentOs):
     and back to the real screen resolution.
     """
 
-    def __init__(self, agent_os: AndroidAgentOs) -> None:
+    def __init__(
+        self,
+        agent_os: AndroidAgentOs,
+        coordinate_space: VlmCoordinateSpace,
+    ) -> None:
         self._agent_os: AndroidAgentOs = agent_os
-        self._target_resolution: Tuple[int, int] = (1024, 768)
+        self._target_resolution: Tuple[int, int] = SCREENSHOT_RESOLUTION
+        self._coordinate_space: VlmCoordinateSpace = coordinate_space
         self._real_screen_resolution: Optional[Tuple[int, int]] = None
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
 
@@ -39,33 +48,39 @@ class AndroidAgentOsFacade(AndroidAgentOs):
 
     def _scale_coordinates(
         self,
-        x: int,
-        y: int,
+        x: float,
+        y: float,
         from_agent: bool = True,
     ) -> Tuple[int, int]:
         if self._real_screen_resolution is None:
             self._real_screen_resolution = self._agent_os.screenshot().size
 
+        mapped_x, mapped_y = (
+            self._coordinate_space.map_to_target(x, y, self._target_resolution)
+            if from_agent
+            else (int(x), int(y))
+        )
+
         return scale_coordinates(
-            (x, y),
+            (mapped_x, mapped_y),
             self._real_screen_resolution,
             self._target_resolution,
             inverse=from_agent,
         )
 
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: float, y: float) -> None:
         x, y = self._scale_coordinates(x, y)
         self._agent_os.tap(x, y)
 
     def swipe(
-        self, x1: int, y1: int, x2: int, y2: int, duration_in_ms: int = 1000
+        self, x1: float, y1: float, x2: float, y2: float, duration_in_ms: int = 1000
     ) -> None:
         x1, y1 = self._scale_coordinates(x1, y1)
         x2, y2 = self._scale_coordinates(x2, y2)
         self._agent_os.swipe(x1, y1, x2, y2, duration_in_ms)
 
     def drag_and_drop(
-        self, x1: int, y1: int, x2: int, y2: int, duration_in_ms: int = 1000
+        self, x1: float, y1: float, x2: float, y2: float, duration_in_ms: int = 1000
     ) -> None:
         x1, y1 = self._scale_coordinates(x1, y1)
         x2, y2 = self._scale_coordinates(x2, y2)

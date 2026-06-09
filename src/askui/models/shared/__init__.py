@@ -1,5 +1,11 @@
 from .android_base_tool import AndroidBaseTool
 from .computer_base_tool import ComputerBaseTool
+from .coordinate_space import (
+    NormalizedCoordinateSpace,
+    PixelCoordinateSpace,
+    ScaledCoordinateSpace,
+    VlmCoordinateSpace,
+)
 from .tool_tags import ToolTags
 
 try:
@@ -13,6 +19,10 @@ except ImportError:
 __all__ = [
     "AndroidBaseTool",
     "ComputerBaseTool",
+    "NormalizedCoordinateSpace",
+    "PixelCoordinateSpace",
+    "ScaledCoordinateSpace",
+    "VlmCoordinateSpace",
     "ToolTags",
 ]
 

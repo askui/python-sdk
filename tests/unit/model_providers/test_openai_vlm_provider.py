@@ -6,6 +6,12 @@ from openai import OpenAI
 
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
 from askui.models.shared.agent_message_param import MessageParam
+from askui.models.shared.coordinate_space import (
+    NormalizedCoordinateSpace,
+    PixelCoordinateSpace,
+    ScaledCoordinateSpace,
+)
+from askui.models.shared.prompts import SystemPrompt
 
 
 class TestOpenAIVlmProvider:
@@ -41,3 +47,122 @@ class TestOpenAIVlmProvider:
 
         mock_client.chat.completions.create.assert_called_once()
         assert result.role == "assistant"
+
+    def test_coordinate_space_defaults_to_pixel(self) -> None:
+        provider = OpenAIVlmProvider(model_id="gpt-4o", api_key="sk-test")
+        assert provider.coordinate_space == PixelCoordinateSpace()
+
+    def test_coordinate_space_passthrough(self) -> None:
+        provider = OpenAIVlmProvider(
+            model_id="gpt-4o",
+            api_key="sk-test",
+            coordinate_space=ScaledCoordinateSpace(width=1000, height=1000),
+        )
+        assert provider.coordinate_space == ScaledCoordinateSpace(
+            width=1000, height=1000
+        )
+
+    def test_augment_system_prompt_scaled_coordinate_space(self) -> None:
+        provider = OpenAIVlmProvider(
+            model_id="gpt-4o",
+            api_key="sk-test",
+            coordinate_space=ScaledCoordinateSpace(width=1000, height=1000),
+        )
+        system = SystemPrompt(prompt="You are a helpful assistant.")
+        augmented = provider.augment_system_prompt(system)
+
+        rendered = str(augmented)
+        assert "You are a helpful assistant." in rendered
+        assert "1000x1000 normalised grid" in rendered
+        assert "1024x768" in rendered
+
+    def test_augment_system_prompt_pixel_bounds_when_matching(self) -> None:
+        provider = OpenAIVlmProvider(model_id="gpt-4o", api_key="sk-test")
+        system = SystemPrompt(prompt="Base prompt.")
+        augmented = provider.augment_system_prompt(system)
+
+        rendered = str(augmented)
+        assert "normalised grid" not in rendered
+        assert "0 <= x < 1024" in rendered
+
+
+class TestPixelCoordinateSpacePrompt:
+    def test_shows_pixel_bounds(self) -> None:
+        cs = PixelCoordinateSpace()
+        result = cs.build_prompt_section((1024, 768))
+        assert "0 <= x < 1024" in result
+        assert "0 <= y < 768" in result
+        assert "normalised grid" not in result
+
+    def test_includes_padding_and_origin_info(self) -> None:
+        cs = PixelCoordinateSpace()
+        result = cs.build_prompt_section((1024, 768))
+        assert "black padding" in result
+        assert "top-left" in result
+
+
+class TestScaledCoordinateSpacePrompt:
+    def test_shows_normalised_grid(self) -> None:
+        cs = ScaledCoordinateSpace(width=1000, height=1000)
+        result = cs.build_prompt_section((1024, 768))
+        assert "1024x768" in result
+        assert "1000x1000 normalised grid" in result
+        assert "0 <= x < 1000" in result
+        assert "0 <= y < 1000" in result
+
+    def test_matching_resolution_shows_pixel_bounds(self) -> None:
+        cs = ScaledCoordinateSpace(width=1024, height=768)
+        result = cs.build_prompt_section((1024, 768))
+        assert "0 <= x < 1024" in result
+        assert "normalised grid" not in result
+
+    def test_includes_padding_and_origin_info(self) -> None:
+        cs = ScaledCoordinateSpace(width=1000, height=1000)
+        result = cs.build_prompt_section((1024, 768))
+        assert "black padding" in result
+        assert "top-left" in result
+
+
+class TestNormalizedCoordinateSpacePrompt:
+    def test_shows_normalised_floats(self) -> None:
+        cs = NormalizedCoordinateSpace()
+        result = cs.build_prompt_section((1024, 768))
+        assert "0.0 <= x <= 1.0" in result
+        assert "0.0 <= y <= 1.0" in result
+        assert "normalised floats" in result
+
+    def test_includes_padding_and_origin_info(self) -> None:
+        cs = NormalizedCoordinateSpace()
+        result = cs.build_prompt_section((1024, 768))
+        assert "black padding" in result
+        assert "top-left" in result
+
+
+class TestMapToTarget:
+    def test_pixel_identity(self) -> None:
+        cs = PixelCoordinateSpace()
+        assert cs.map_to_target(512, 384, (1024, 768)) == (512, 384)
+
+    def test_pixel_truncates_floats(self) -> None:
+        cs = PixelCoordinateSpace()
+        assert cs.map_to_target(512.7, 384.3, (1024, 768)) == (512, 384)
+
+    def test_scaled_maps_correctly(self) -> None:
+        cs = ScaledCoordinateSpace(width=1000, height=1000)
+        assert cs.map_to_target(500, 500, (1024, 768)) == (512, 384)
+
+    def test_scaled_zero(self) -> None:
+        cs = ScaledCoordinateSpace(width=1000, height=1000)
+        assert cs.map_to_target(0, 0, (1024, 768)) == (0, 0)
+
+    def test_normalized_maps_correctly(self) -> None:
+        cs = NormalizedCoordinateSpace()
+        assert cs.map_to_target(0.5, 0.5, (1024, 768)) == (512, 384)
+
+    def test_normalized_zero(self) -> None:
+        cs = NormalizedCoordinateSpace()
+        assert cs.map_to_target(0.0, 0.0, (1024, 768)) == (0, 0)
+
+    def test_normalized_one(self) -> None:
+        cs = NormalizedCoordinateSpace()
+        assert cs.map_to_target(1.0, 1.0, (1024, 768)) == (1024, 768)

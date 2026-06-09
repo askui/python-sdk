@@ -2,6 +2,10 @@ from typing import Literal
 
 from PIL import Image
 
+from askui.models.shared.coordinate_space import (
+    SCREENSHOT_RESOLUTION,
+    VlmCoordinateSpace,
+)
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import Display, ModifierKey, PcKey
 from askui.tools.playwright.agent_os import PlaywrightAgentOs
@@ -20,9 +24,14 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
         agent_os (PlaywrightAgentOs): The real Playwright agent OS to wrap.
     """
 
-    def __init__(self, agent_os: PlaywrightAgentOs) -> None:
+    def __init__(
+        self,
+        agent_os: PlaywrightAgentOs,
+        coordinate_space: VlmCoordinateSpace,
+    ) -> None:
         self._agent_os = agent_os
-        self._target_resolution: tuple[int, int] = (1024, 768)
+        self._target_resolution: tuple[int, int] = SCREENSHOT_RESOLUTION
+        self._coordinate_space: VlmCoordinateSpace = coordinate_space
         self._real_screen_resolution: tuple[int, int] | None = None
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
 
@@ -43,22 +52,29 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
 
     def _scale_coordinates(
         self,
-        x: int,
-        y: int,
+        x: float,
+        y: float,
         from_agent: bool = True,
     ) -> tuple[int, int]:
         if self._real_screen_resolution is None:
             self._real_screen_resolution = self._agent_os.screenshot(
                 report=False,
             ).size
+
+        mapped_x, mapped_y = (
+            self._coordinate_space.map_to_target(x, y, self._target_resolution)
+            if from_agent
+            else (int(x), int(y))
+        )
+
         return scale_coordinates(
-            (x, y),
+            (mapped_x, mapped_y),
             self._real_screen_resolution,
             self._target_resolution,
             inverse=from_agent,
         )
 
-    def mouse_move(self, x: int, y: int, duration: int = 500) -> None:
+    def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
         scaled_x, scaled_y = self._scale_coordinates(x, y)
         # scaled_x, scaled_y = x, y
         self._agent_os.mouse_move(scaled_x, scaled_y, duration)

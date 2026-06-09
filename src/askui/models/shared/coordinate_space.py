@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
+from pydantic import BaseModel, Field
+
+# The resolution screenshots are scaled to before being sent to the model.
+# Used by all agent OS facades (computer, Android, Playwright).
+SCREENSHOT_RESOLUTION: tuple[int, int] = (1024, 768)
+
+
+def _common_prompt_lines(screenshot_resolution: tuple[int, int]) -> list[str]:
+    sw, sh = screenshot_resolution
+    return [
+        f"* Screenshot resolution: {sw}x{sh} pixels",
+        "* Screenshots may contain black padding bars to preserve the "
+        "original aspect ratio. UI elements are NOT located in the "
+        "padding area.",
+        "* Coordinate origin is the top-left corner (0, 0)",
+    ]
+
+
+class VlmCoordinateSpace(BaseModel, ABC):
+    """Abstract base for VLM coordinate conventions.
+
+    Each subclass describes one coordinate grid a VLM may emit and knows
+    how to map those coordinates back to pixel space and how to render
+    the matching prompt section.
+    """
+
+    @abstractmethod
+    def map_to_target(
+        self, x: float, y: float, target_resolution: tuple[int, int]
+    ) -> tuple[int, int]:
+        """Map model coordinates to pixel coordinates in *target_resolution*."""
+
+    @abstractmethod
+    def build_prompt_section(self, screenshot_resolution: tuple[int, int]) -> str:
+        """Build prompt text describing coordinate bounds for the model."""
+
+
+class PixelCoordinateSpace(VlmCoordinateSpace):
+    """Identity mapping -- coordinates already in pixel space.
+
+    Used by Anthropic/Claude which emit coordinates matching the
+    screenshot resolution.
+    """
+
+    def map_to_target(
+        self,
+        x: float,
+        y: float,
+        target_resolution: tuple[int, int],  # noqa: ARG002
+    ) -> tuple[int, int]:
+        return int(x), int(y)
+
+    def build_prompt_section(self, screenshot_resolution: tuple[int, int]) -> str:
+        sw, sh = screenshot_resolution
+        lines = _common_prompt_lines(screenshot_resolution)
+        lines.append(f"* Coordinate bounds: 0 <= x < {sw}, 0 <= y < {sh}")
+        return "\n".join(lines)
+
+
+class ScaledCoordinateSpace(VlmCoordinateSpace):
+    """Integer grid (e.g. 1000x1000 for Qwen). Linear scaling."""
+
+    width: int = Field(gt=0, description="Width of the coordinate grid")
+    height: int = Field(gt=0, description="Height of the coordinate grid")
+
+    def map_to_target(
+        self, x: float, y: float, target_resolution: tuple[int, int]
+    ) -> tuple[int, int]:
+        tw, th = target_resolution
+        return int(x * tw / self.width), int(y * th / self.height)
+
+    def build_prompt_section(self, screenshot_resolution: tuple[int, int]) -> str:
+        lines = _common_prompt_lines(screenshot_resolution)
+        if (self.width, self.height) != screenshot_resolution:
+            lines.append(
+                f"* Emit coordinates in a {self.width}x{self.height} "
+                f"normalised grid: 0 <= x < {self.width}, "
+                f"0 <= y < {self.height}"
+            )
+        else:
+            sw, sh = screenshot_resolution
+            lines.append(f"* Coordinate bounds: 0 <= x < {sw}, 0 <= y < {sh}")
+        return "\n".join(lines)
+
+
+class NormalizedCoordinateSpace(VlmCoordinateSpace):
+    """0.0-1.0 float grid (Kimi). No fields."""
+
+    def map_to_target(
+        self, x: float, y: float, target_resolution: tuple[int, int]
+    ) -> tuple[int, int]:
+        tw, th = target_resolution
+        return int(x * tw), int(y * th)
+
+    def build_prompt_section(self, screenshot_resolution: tuple[int, int]) -> str:
+        lines = _common_prompt_lines(screenshot_resolution)
+        lines.append(
+            "* Emit coordinates as normalised floats: 0.0 <= x <= 1.0, 0.0 <= y <= 1.0"
+        )
+        return "\n".join(lines)
