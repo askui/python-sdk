@@ -61,17 +61,26 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
                 report=False,
             ).size
 
-        mapped_x, mapped_y = (
-            self._coordinate_space.map_to_target(x, y, self._target_resolution)
-            if from_agent
-            else (int(x), int(y))
-        )
+        if from_agent:
+            if self._coordinate_space.maps_to_screenshot_pixels:
+                mapped_x, mapped_y = self._coordinate_space.map_to_target(
+                    x, y, self._target_resolution
+                )
+                return scale_coordinates(
+                    (mapped_x, mapped_y),
+                    self._real_screen_resolution,
+                    self._target_resolution,
+                    inverse=True,
+                )
+            return self._coordinate_space.map_to_target(
+                x, y, self._real_screen_resolution
+            )
 
         return scale_coordinates(
-            (mapped_x, mapped_y),
+            (int(x), int(y)),
             self._real_screen_resolution,
             self._target_resolution,
-            inverse=from_agent,
+            inverse=False,
         )
 
     def mouse_move(self, x: float, y: float, duration: int = 500) -> None:

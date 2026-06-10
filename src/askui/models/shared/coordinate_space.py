@@ -28,6 +28,16 @@ class VlmCoordinateSpace(BaseModel, ABC):
     the matching prompt section.
     """
 
+    @property
+    def maps_to_screenshot_pixels(self) -> bool:
+        """Whether model coordinates are absolute pixels in the screenshot image.
+
+        When ``True``, coordinates need padding-aware inverse scaling
+        (screenshot space to device space).  When ``False``, coordinates
+        are in a normalised grid and map directly to device resolution.
+        """
+        return False
+
     @abstractmethod
     def map_to_target(
         self, x: float, y: float, target_resolution: tuple[int, int]
@@ -45,6 +55,10 @@ class PixelCoordinateSpace(VlmCoordinateSpace):
     Used by Anthropic/Claude which emit coordinates matching the
     screenshot resolution.
     """
+
+    @property
+    def maps_to_screenshot_pixels(self) -> bool:
+        return True
 
     def map_to_target(
         self,

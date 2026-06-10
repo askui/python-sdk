@@ -138,6 +138,20 @@ class TestNormalizedCoordinateSpacePrompt:
         assert "top-left" in result
 
 
+class TestMapsToScreenshotPixels:
+    def test_pixel_returns_true(self) -> None:
+        assert PixelCoordinateSpace().maps_to_screenshot_pixels is True
+
+    def test_scaled_returns_false(self) -> None:
+        assert (
+            ScaledCoordinateSpace(width=1000, height=1000).maps_to_screenshot_pixels
+            is False
+        )
+
+    def test_normalized_returns_false(self) -> None:
+        assert NormalizedCoordinateSpace().maps_to_screenshot_pixels is False
+
+
 class TestMapToTarget:
     def test_pixel_identity(self) -> None:
         cs = PixelCoordinateSpace()

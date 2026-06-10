@@ -319,16 +319,29 @@ class ComputerAgentOsFacade(AgentOs):
         if self._real_screen_resolution is None:
             self._real_screen_resolution = self._agent_os.retrieve_active_display().size
 
-        mapped_x, mapped_y = (
-            self._coordinate_space.map_to_target(x, y, self._target_resolution)
-            if from_agent
-            else (int(x), int(y))
+        real_size = (
+            self._real_screen_resolution.width,
+            self._real_screen_resolution.height,
         )
 
+        if from_agent:
+            if self._coordinate_space.maps_to_screenshot_pixels:
+                mapped_x, mapped_y = self._coordinate_space.map_to_target(
+                    x, y, self._target_resolution
+                )
+                return scale_coordinates(
+                    (mapped_x, mapped_y),
+                    real_size,
+                    self._target_resolution,
+                    inverse=True,
+                    check_coordinates_in_bounds=check_coordinates_in_bounds,
+                )
+            return self._coordinate_space.map_to_target(x, y, real_size)
+
         return scale_coordinates(
-            (mapped_x, mapped_y),
-            (self._real_screen_resolution.width, self._real_screen_resolution.height),
+            (int(x), int(y)),
+            real_size,
             self._target_resolution,
-            inverse=from_agent,
+            inverse=False,
             check_coordinates_in_bounds=check_coordinates_in_bounds,
         )
