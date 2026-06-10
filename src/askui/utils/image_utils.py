@@ -227,6 +227,33 @@ def scale_image_to_fit(
     return _center_image_in_background(scaled_image, target_size)
 
 
+def downscale_image(
+    image: Image.Image,
+    max_dimension: int = 2000,
+) -> Image.Image:
+    """Downscale an image so its longest side does not exceed `max_dimension`.
+
+    Preserves the original aspect ratio. Images that are already
+    within the limit are returned unchanged.
+
+    Args:
+        image (Image.Image): The PIL Image to downscale.
+        max_dimension (int, optional): Maximum allowed size for the longest side. Defaults to `2000`.
+
+    Returns:
+        Image.Image: The downscaled image, or the original if no scaling was needed.
+    """
+    longest_side = max(image.width, image.height)
+    if longest_side <= max_dimension:
+        return image
+    scale_factor = max_dimension / longest_side
+    new_size = (
+        int(image.width * scale_factor),
+        int(image.height * scale_factor),
+    )
+    return image.resize(new_size, Image.Resampling.LANCZOS)
+
+
 def _scale_coordinates(
     coordinates: tuple[int, int],
     offset: tuple[int, int],
