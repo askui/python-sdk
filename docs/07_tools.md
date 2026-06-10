@@ -181,6 +181,18 @@ A tool’s __call__ method may return:
 - None
 - a list or tuple containing any of the above
 
+**Image size limit:** When a tool returns a `PIL.Image.Image`, it is the tool’s responsibility to ensure the image does not exceed **2000×2000 px** (longest side ≤ 2000 px). The Claude API enforces a 2000×2000 px per-image limit when more than 20 images are sent in a single request, which is common in agentic loops. Use `downscale_image()` from `askui.utils.image_utils` to downscale images that may be too large:
+
+```python
+from PIL import Image
+from askui.utils.image_utils import downscale_image
+
+image: Image.Image = ...  # your image
+image = downscale_image(image, max_dimension=2000)
+```
+
+This preserves the original aspect ratio and only downscales images whose longest side exceeds the limit.
+
 ### Complete Example
 
 Here’s a greeting tool that demonstrates all the key concepts:
