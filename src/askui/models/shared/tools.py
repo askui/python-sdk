@@ -33,7 +33,7 @@ from askui.models.shared.agent_message_param import (
 )
 from askui.tools import AgentOs
 from askui.tools.android.agent_os import AndroidAgentOs
-from askui.utils.image_utils import ImageSource, base64_to_image, downscale_image
+from askui.utils.image_utils import ImageSource, base64_to_image
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +100,6 @@ def _convert_to_content(
     if isinstance(result, BaseModel):
         return [TextBlockParam(text=result.model_dump_json())]
 
-    # Downscale to stay within the 2000x2000 px per-image limit that applies
-    # when more than 20 images are sent in a single API request (Claude API).
-    # https://platform.claude.com/docs/en/build-with-claude/vision#before-you-upload
-    result = downscale_image(result, max_dimension=2000)
     return [
         ImageBlockParam(
             source=Base64ImageSourceParam(
