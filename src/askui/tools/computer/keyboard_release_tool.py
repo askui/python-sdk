@@ -1,13 +1,13 @@
 from typing import get_args
 
 from askui.models.shared import ComputerBaseTool
-from askui.tools.agent_os import AgentOs, ModifierKey, PcKey
+from askui.tools.agent_os import ComputerAgentOS, ModifierKey, PcKey
 
 
 class ComputerKeyboardReleaseTool(ComputerBaseTool):
     """Computer Keyboard Release Tool"""
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="keyboard_release",
             description="Release a keyboard key.",

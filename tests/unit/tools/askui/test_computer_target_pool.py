@@ -1,11 +1,11 @@
 import pytest
 
 from askui.tools.askui.agent_os_target_computer import (
-    LocalAgentOsTargetComputer,
-    RemoteAgentOsTargetComputer,
+    LocalComputerTarget,
+    RemoteComputerTarget,
 )
-from askui.tools.askui.agent_os_target_computer_manager import (
-    AgentOsTargetComputerManager,
+from askui.tools.askui.computer_target_pool import (
+    ComputerTargetPool,
 )
 
 
@@ -13,19 +13,19 @@ def _make_remote(
     address: str = "1.2.3.4:23000",
     description: str = "remote",
     computer_id: str | None = None,
-) -> RemoteAgentOsTargetComputer:
-    return RemoteAgentOsTargetComputer(
+) -> RemoteComputerTarget:
+    return RemoteComputerTarget(
         address=address, description=description, computer_id=computer_id
     )
 
 
-def _make_local(computer_id: str | None = None) -> LocalAgentOsTargetComputer:
-    return LocalAgentOsTargetComputer(discover_service=False, computer_id=computer_id)
+def _make_local(computer_id: str | None = None) -> LocalComputerTarget:
+    return LocalComputerTarget(discover_service=False, computer_id=computer_id)
 
 
 class TestConstruction:
     def test_empty_constructor_yields_empty_manager(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         assert m.list() == []
         assert m.active is None
         assert len(m) == 0
@@ -33,13 +33,13 @@ class TestConstruction:
     def test_constructor_registers_initial_targets_in_order(self) -> None:
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         b = _make_remote(address="2.2.2.2:23000", computer_id="b")
-        m = AgentOsTargetComputerManager(agent_os_target_computers=[a, b])
+        m = ComputerTargetPool(agent_os_target_computers=[a, b])
         assert m.list() == [a, b]
         # First registered becomes active.
         assert m.active is a
 
     def test_first_added_becomes_active(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         a = _make_remote(computer_id="a")
         m.add(a)
         assert m.active is a
@@ -47,19 +47,19 @@ class TestConstruction:
 
 class TestAddConstraints:
     def test_rejects_second_local_target(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_local(computer_id="first"))
         with pytest.raises(ValueError, match="second local Agent OS target computer"):
             m.add(_make_local(computer_id="second"))
 
     def test_rejects_duplicate_computer_id(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(address="1.1.1.1:23000", computer_id="rig"))
         with pytest.raises(ValueError, match="computer_id='rig'"):
             m.add(_make_remote(address="2.2.2.2:23000", computer_id="rig"))
 
     def test_rejects_duplicate_remote_address(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(address="1.1.1.1:23000", computer_id="a"))
         with pytest.raises(
             ValueError,
@@ -68,7 +68,7 @@ class TestAddConstraints:
             m.add(_make_remote(address="1.1.1.1:23000", computer_id="b"))
 
     def test_allows_local_plus_remote_with_same_address(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_local(computer_id="local"))
         # Local target's default address is 'localhost:23000' but the local/remote
         # address-uniqueness rule only applies between remote targets.
@@ -82,11 +82,11 @@ class TestAddConstraints:
 
 class TestAddRemote:
     def test_constructs_and_registers(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         agent_os_target_computer = m.add_remote(
             address="1.2.3.4:23000", description="r"
         )
-        assert isinstance(agent_os_target_computer, RemoteAgentOsTargetComputer)
+        assert isinstance(agent_os_target_computer, RemoteComputerTarget)
         assert agent_os_target_computer.address == "1.2.3.4:23000"
         assert agent_os_target_computer.description == "r"
         assert m.list() == [agent_os_target_computer]
@@ -94,13 +94,13 @@ class TestAddRemote:
 
 class TestGetAndSwitch:
     def test_get_returns_target_by_computer_id(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         m.add(a)
         assert m.get("a") is a
 
     def test_get_raises_keyerror_with_registered_ids(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(address="1.1.1.1:23000", computer_id="a"))
         with pytest.raises(KeyError) as exc_info:
             m.get("missing")
@@ -109,7 +109,7 @@ class TestGetAndSwitch:
         assert "'a'" in message  # registered id surfaced
 
     def test_switch_changes_active(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         b = _make_remote(address="2.2.2.2:23000", computer_id="b")
         m.add(a)
@@ -119,7 +119,7 @@ class TestGetAndSwitch:
         assert m.active is b
 
     def test_switch_unknown_id_raises_keyerror(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(computer_id="a"))
         with pytest.raises(KeyError, match="missing"):
             m.switch("missing")
@@ -127,7 +127,7 @@ class TestGetAndSwitch:
 
 class TestRemove:
     def test_remove_drops_target(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         b = _make_remote(address="2.2.2.2:23000", computer_id="b")
         m.add(a)
@@ -136,7 +136,7 @@ class TestRemove:
         assert m.list() == [b]
 
     def test_remove_active_falls_back_to_first_remaining(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         b = _make_remote(address="2.2.2.2:23000", computer_id="b")
         m.add(a)
@@ -146,14 +146,14 @@ class TestRemove:
         assert m.active is b
 
     def test_remove_last_clears_active(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(computer_id="a"))
         m.remove("a")
         assert m.active is None
         assert len(m) == 0
 
     def test_remove_inactive_keeps_active_unchanged(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         b = _make_remote(address="2.2.2.2:23000", computer_id="b")
         m.add(a)
@@ -162,7 +162,7 @@ class TestRemove:
         assert m.active is a
 
     def test_remove_unknown_raises_keyerror(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(computer_id="a"))
         with pytest.raises(KeyError):
             m.remove("missing")
@@ -170,7 +170,7 @@ class TestRemove:
 
 class TestReset:
     def test_reset_clears_all(self) -> None:
-        m = AgentOsTargetComputerManager()
+        m = ComputerTargetPool()
         m.add(_make_remote(computer_id="a"))
         m.add(_make_remote(address="2.2.2.2:23000", computer_id="b"))
         m.reset()

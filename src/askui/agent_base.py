@@ -26,7 +26,7 @@ from askui.models.shared.tools import Tool, ToolCollection
 from askui.models.shared.truncation_strategies import TruncationStrategy
 from askui.prompts.act_prompts import CACHE_USE_PROMPT, create_default_prompt
 from askui.telemetry.otel import OtelSettings, setup_opentelemetry_tracing
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.tools.caching_tools import (
     InspectCacheMetadata,
@@ -57,7 +57,7 @@ class Agent:
         reporter: Reporter | None = None,
         retry: Retry | None = None,
         tools: list[Tool] | None = None,
-        agent_os: AgentOs | AndroidAgentOs | None = None,
+        agent_os: ComputerAgentOS | AndroidAgentOs | None = None,
         settings: AgentSettings | None = None,
         callbacks: list[ConversationCallback] | None = None,
         truncation_strategy: TruncationStrategy | None = None,

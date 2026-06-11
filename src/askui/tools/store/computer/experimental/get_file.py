@@ -1,7 +1,7 @@
 from PIL import Image
 
 from askui.models.shared import ComputerBaseTool, ToolTags
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 
 
 class ComputerGetFileTool(ComputerBaseTool):
@@ -24,7 +24,7 @@ class ComputerGetFileTool(ComputerBaseTool):
         ```
     """
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="get_file_tool",
             description=(

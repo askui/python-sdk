@@ -4,9 +4,9 @@ from dataclasses import dataclass
 import grpc
 
 from askui.tools.askui.agent_os_target_computer import (
-    AgentOsTargetComputer,
-    LocalAgentOsTargetComputer,
-    RemoteAgentOsTargetComputer,
+    ComputerTarget,
+    LocalComputerTarget,
+    RemoteComputerTarget,
 )
 from askui.tools.askui.askui_ui_controller_grpc.generated import (
     Controller_V1_pb2 as controller_v1_pbs,
@@ -21,22 +21,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class _Connection:
-    """gRPC connection state for a single Agent OS target computer."""
+    """gRPC connection state for a single computer target."""
 
-    target: AgentOsTargetComputer
+    target: ComputerTarget
     channel: grpc.Channel
     stub: controller_v1.ControllerAPIStub
     session_info: controller_v1_pbs.SessionInfo
     started_process: bool
 
 
-class AgentOsTargetComputerManager:
+class ComputerTargetPool:
     """
-    Manages a collection of `AgentOsTargetComputer` instances and their gRPC
+    Manages a collection of `ComputerTarget` instances and their gRPC
     connections, and tracks the currently active one.
 
     Responsibilities:
-        - Register / unregister `AgentOsTargetComputer` instances with uniqueness
+        - Register / unregister `ComputerTarget` instances with uniqueness
           constraints (at most one local, unique computer ids / session GUIDs,
           unique remote addresses).
         - Open and close gRPC channels and sessions to each registered target.
@@ -52,17 +52,17 @@ class AgentOsTargetComputerManager:
     Targets are addressed exclusively by their `computer_id`.
 
     Args:
-        agent_os_target_computers (list[AgentOsTargetComputer] | None, optional):
+        agent_os_target_computers (list[ComputerTarget] | None, optional):
             Initial targets to register.
     """
 
     def __init__(
         self,
-        agent_os_target_computers: list[AgentOsTargetComputer] | None = None,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
     ) -> None:
         # Single store. Python dicts preserve insertion order, so this also
         # defines `list()` order and the first-added-is-active semantics.
-        self._by_computer_id: dict[str, AgentOsTargetComputer] = {}
+        self._by_computer_id: dict[str, ComputerTarget] = {}
         # Open gRPC connections, keyed by `computer_id`.
         self._connections: dict[str, _Connection] = {}
         self._active_computer_id: str | None = None
@@ -75,16 +75,16 @@ class AgentOsTargetComputerManager:
         """`True` when at least one gRPC connection is open."""
         return bool(self._connections)
 
-    def add(self, target: AgentOsTargetComputer) -> AgentOsTargetComputer:
+    def add(self, target: ComputerTarget) -> ComputerTarget:
         """
         Register an Agent OS target computer. Auto-connects when the manager
         already has at least one open connection.
 
         Args:
-            target (AgentOsTargetComputer): The target computer to register.
+            target (ComputerTarget): The target computer to register.
 
         Returns:
-            AgentOsTargetComputer: The registered target.
+            ComputerTarget: The registered target.
 
         Raises:
             ValueError: If another local target is already registered, the same
@@ -103,7 +103,7 @@ class AgentOsTargetComputerManager:
         self,
         address: str,
         description: str,
-    ) -> RemoteAgentOsTargetComputer:
+    ) -> RemoteComputerTarget:
         """
         Convenience method to construct and register a remote Agent OS target
         computer. Auto-connects when the manager already has at least one open
@@ -114,9 +114,9 @@ class AgentOsTargetComputerManager:
             description (str): Human-readable description.
 
         Returns:
-            RemoteAgentOsTargetComputer: The newly registered target.
+            RemoteComputerTarget: The newly registered target.
         """
-        target = RemoteAgentOsTargetComputer(address=address, description=description)
+        target = RemoteComputerTarget(address=address, description=description)
         self.add(target)
         return target
 
@@ -143,11 +143,11 @@ class AgentOsTargetComputerManager:
         if self._active_computer_id == computer_id:
             self._active_computer_id = next(iter(self._by_computer_id), None)
 
-    def list(self) -> list[AgentOsTargetComputer]:
+    def list(self) -> list[ComputerTarget]:
         """Return all registered targets in registration order."""
         return list(self._by_computer_id.values())
 
-    def get(self, computer_id: str) -> AgentOsTargetComputer:
+    def get(self, computer_id: str) -> ComputerTarget:
         """
         Return the registered target with the given `computer_id`.
 
@@ -156,7 +156,7 @@ class AgentOsTargetComputerManager:
         """
         return self._require(computer_id)
 
-    def switch(self, computer_id: str) -> AgentOsTargetComputer:
+    def switch(self, computer_id: str) -> ComputerTarget:
         """
         Set the active target by its `computer_id`. Auto-connects the new
         active target when the manager already has at least one open connection
@@ -166,7 +166,7 @@ class AgentOsTargetComputerManager:
             computer_id (str): The computer id of the target to activate.
 
         Returns:
-            AgentOsTargetComputer: The newly active target.
+            ComputerTarget: The newly active target.
 
         Raises:
             KeyError: If no target with the given computer id is registered.
@@ -178,13 +178,13 @@ class AgentOsTargetComputerManager:
         return target
 
     @property
-    def active(self) -> AgentOsTargetComputer | None:
+    def active(self) -> ComputerTarget | None:
         """The currently active target, or `None` if no targets are registered."""
         if self._active_computer_id is None:
             return None
         return self._by_computer_id.get(self._active_computer_id)
 
-    def require_active(self) -> AgentOsTargetComputer:
+    def require_active(self) -> ComputerTarget:
         """
         Return the currently active target.
 
@@ -195,9 +195,9 @@ class AgentOsTargetComputerManager:
         if target is None:
             error_msg = (
                 "No active Agent OS target computer. Register one via "
-                "`AskUiControllerClient.add_agent_os_target_computer()` / "
+                "`MultiComputerTargetAgentOS.add_agent_os_target_computer()` / "
                 "`add_remote_agent_os_target_computer()`, or pass "
-                "`agent_os_target_computers` to the `AskUiControllerClient` "
+                "`agent_os_target_computers` to the `MultiComputerTargetAgentOS` "
                 "constructor."
             )
             raise AskUiControllerError(error_msg)
@@ -219,7 +219,7 @@ class AgentOsTargetComputerManager:
                 f"Active Agent OS target computer {target.description!r} "
                 f"(computer_id={target.computer_id!r}, "
                 f"address={target.address}) "
-                "is not connected. Call `AskUiControllerClient.connect()` first."
+                "is not connected. Call `MultiComputerTargetAgentOS.connect()` first."
             )
             raise AskUiControllerError(error_msg)
         return conn
@@ -243,7 +243,7 @@ class AgentOsTargetComputerManager:
         if not self._by_computer_id:
             error_msg = (
                 "Cannot connect: no Agent OS target computers registered. Provide "
-                "at least one via the `AskUiControllerClient` constructor's "
+                "at least one via the `MultiComputerTargetAgentOS` constructor's "
                 "`agent_os_target_computers` argument, or call "
                 "`add_agent_os_target_computer()` / "
                 "`add_remote_agent_os_target_computer()` before `connect()`."
@@ -256,7 +256,7 @@ class AgentOsTargetComputerManager:
             self.disconnect_all()
             raise
 
-    def connect(self, target: AgentOsTargetComputer) -> None:
+    def connect(self, target: ComputerTarget) -> None:
         """
         Open a gRPC channel and session to a single registered Agent OS target.
         Idempotent: returns silently if the target is already connected.
@@ -264,7 +264,7 @@ class AgentOsTargetComputerManager:
         if target.computer_id in self._connections:
             return
         started_process = False
-        if isinstance(target, LocalAgentOsTargetComputer) and not target.is_service:
+        if isinstance(target, LocalComputerTarget) and not target.is_service:
             target.start()
             started_process = True
         channel = grpc.insecure_channel(
@@ -366,7 +366,7 @@ class AgentOsTargetComputerManager:
     def __contains__(self, computer_id: object) -> bool:
         return isinstance(computer_id, str) and computer_id in self._by_computer_id
 
-    def _validate_addable(self, target: AgentOsTargetComputer) -> None:
+    def _validate_addable(self, target: ComputerTarget) -> None:
         if target.is_local:
             existing_local = next(
                 (t for t in self._by_computer_id.values() if t.is_local), None
@@ -398,7 +398,7 @@ class AgentOsTargetComputerManager:
             )
             raise ValueError(error_msg)
 
-    def _require(self, computer_id: str) -> AgentOsTargetComputer:
+    def _require(self, computer_id: str) -> ComputerTarget:
         target = self._by_computer_id.get(computer_id)
         if target is not None:
             return target
@@ -411,4 +411,4 @@ class AgentOsTargetComputerManager:
         raise KeyError(error_msg)
 
 
-__all__ = ["AgentOsTargetComputerManager"]
+__all__ = ["ComputerTargetPool"]

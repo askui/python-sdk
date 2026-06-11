@@ -68,7 +68,7 @@ Work with any agent type, no special dependencies required.
 
 #### Computer Tools (`computer/`)
 
-Require `AgentOs` and work with `ComputerAgent` for desktop automation.
+Require `ComputerAgentOS` and work with `ComputerAgent` for desktop automation.
 
 **Examples:**
 - `ComputerSaveScreenshotTool(base_dir)` - Save screenshots to disk

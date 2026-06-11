@@ -1,13 +1,13 @@
 from typing import get_args
 
 from askui.models.shared import ComputerBaseTool
-from askui.tools.agent_os import AgentOs, ModifierKey, PcKey
+from askui.tools.agent_os import ComputerAgentOS, ModifierKey, PcKey
 
 
 class ComputerKeyboardTapTool(ComputerBaseTool):
     """Computer Keyboard Tap Tool"""
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="keyboard_tap",
             description="Tap (press and release) a keyboard key.",

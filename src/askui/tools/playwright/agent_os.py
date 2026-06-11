@@ -19,11 +19,18 @@ from typing_extensions import override
 from askui.reporting import NULL_REPORTER, Reporter
 from askui.utils.annotated_image import AnnotatedImage
 
-from ..agent_os import AgentOs, Display, DisplaySize, InputEvent, ModifierKey, PcKey
+from ..agent_os import (
+    ComputerAgentOS,
+    Display,
+    DisplaySize,
+    InputEvent,
+    ModifierKey,
+    PcKey,
+)
 
 
-class PlaywrightAgentOs(AgentOs):
-    """Playwright-based implementation of `AgentOs`.
+class PlaywrightAgentOs(ComputerAgentOS):
+    """Playwright-based implementation of `ComputerAgentOS`.
 
     This implementation uses Playwright's Python SDK to control browser automation
     and simulate user interactions. It provides mouse control, keyboard input,

@@ -1,5 +1,5 @@
 from askui.models.shared import ComputerBaseTool
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 
 
 class ComputerListProcessWindowsTool(ComputerBaseTool):
@@ -9,7 +9,7 @@ class ComputerListProcessWindowsTool(ComputerBaseTool):
     list_process_tool.
     """
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="list_process_windows_tool",
             description="""

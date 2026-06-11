@@ -3,7 +3,7 @@
 Tools are organized by category:
 - `android`: Tools specific to Android agents (require AndroidAgentOs)
 - `computer`: Tools specific to Computer/Desktop agents (require ComputerAgentOsFacade)
-- `universal`: Tools that work with any agent type (don't require AgentOs)
+- `universal`: Tools that work with any agent type (don't require ComputerAgentOS)
 
 Example:
     ```python

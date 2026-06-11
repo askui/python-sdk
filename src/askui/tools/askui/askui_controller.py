@@ -13,7 +13,7 @@ from typing_extensions import Self, override
 from askui.container import telemetry
 from askui.reporting import NULL_REPORTER, Reporter
 from askui.tools.agent_os import (
-    AgentOs,
+    ComputerAgentOS,
     Coordinate,
     Display,
     DisplaysListResponse,
@@ -21,12 +21,9 @@ from askui.tools.agent_os import (
     PcKey,
 )
 from askui.tools.askui.agent_os_target_computer import (
-    AgentOsTargetComputer,
-    LocalAgentOsTargetComputer,
-    RemoteAgentOsTargetComputer,
-)
-from askui.tools.askui.agent_os_target_computer_manager import (
-    AgentOsTargetComputerManager,
+    ComputerTarget,
+    LocalComputerTarget,
+    RemoteComputerTarget,
 )
 from askui.tools.askui.askui_ui_controller_grpc.desktop_agent_os_error import (
     DesktopAgentOsError,
@@ -76,6 +73,9 @@ from askui.tools.askui.askui_ui_controller_grpc.generated.AgentOS_Send_Response_
     GetSystemInfoResponse,
     GetSystemInfoResponseModel,
 )
+from askui.tools.askui.computer_target_pool import (
+    ComputerTargetPool,
+)
 from askui.utils.annotated_image import AnnotatedImage
 from askui.utils.image_utils import base64_to_image
 
@@ -86,10 +86,10 @@ from .exceptions import (
 )
 
 
-class AskUiControllerClient(AgentOs):
+class MultiComputerTargetAgentOS(ComputerAgentOS):
     """
-    Implementation of `AgentOs` that communicates with one or more Agent OS target
-    computers (AskUI Remote Device Controller processes) via gRPC.
+    Implementation of `ComputerAgentOS` that communicates with one or more
+    computer targets (AskUI Remote Device Controller processes) via gRPC.
 
     A client is configured with a non-empty list of `agent_os_target_computers`
     (at most one local, the rest remote with unique addresses). `connect()` opens
@@ -106,12 +106,12 @@ class AskUiControllerClient(AgentOs):
     `reset_agent_os_target_computers` to clear or replace the list.
 
     Args:
-        reporter (Reporter): Reporter used for reporting with the `"AgentOs"`.
+        reporter (Reporter): Reporter used for reporting with the `"AgentOS"`.
         display (int, optional): Display number to use. Defaults to `1`.
-        agent_os_target_computers (list[AgentOsTargetComputer] | None, optional):
-            Target computers to register. Must be non-empty if provided, contain
+        agent_os_target_computers (list[ComputerTarget] | None, optional):
+            Computer targets to register. Must be non-empty if provided, contain
             at most one local target, and have unique addresses across remote
-            targets. If `None` (default), a single `LocalAgentOsTargetComputer`
+            targets. If `None` (default), a single `LocalComputerTarget`
             with default settings is registered.
     """
 
@@ -122,21 +122,21 @@ class AskUiControllerClient(AgentOs):
         self,
         reporter: Reporter = NULL_REPORTER,
         display: int = 1,
-        agent_os_target_computers: list[AgentOsTargetComputer] | None = None,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
     ) -> None:
         if not agent_os_target_computers:
-            agent_os_target_computers = [LocalAgentOsTargetComputer(display=display)]
+            agent_os_target_computers = [LocalComputerTarget(display=display)]
 
         self._pre_action_wait = 0
         self._post_action_wait = 0.05
         self._max_retries = 10
         self._reporter = reporter
-        self._manager = AgentOsTargetComputerManager(
+        self._manager = ComputerTargetPool(
             agent_os_target_computers=agent_os_target_computers
         )
 
     @property
-    def agent_os_target_computer_manager(self) -> AgentOsTargetComputerManager:
+    def agent_os_target_computer_manager(self) -> ComputerTargetPool:
         """The underlying target-computer manager."""
         return self._manager
 
@@ -145,7 +145,7 @@ class AskUiControllerClient(AgentOs):
         """`True` when at least one target-computer connection is open."""
         return self._manager.is_connected
 
-    def _require_active_agent_os_target_computer(self) -> AgentOsTargetComputer:
+    def _require_active_agent_os_target_computer(self) -> ComputerTarget:
         return self._manager.require_active()
 
     @property
@@ -158,7 +158,7 @@ class AskUiControllerClient(AgentOs):
         self,
         address: str,
         description: str,
-    ) -> RemoteAgentOsTargetComputer:
+    ) -> RemoteComputerTarget:
         """
         Register a remote target computer. Auto-connects if the client is
         currently connected.
@@ -168,7 +168,7 @@ class AskUiControllerClient(AgentOs):
             description (str): Human-readable description.
 
         Returns:
-            RemoteAgentOsTargetComputer: The newly registered target computer.
+            RemoteComputerTarget: The newly registered target computer.
         """
         self._reporter.add_message(
             self._REPORTER_SOURCE,
@@ -189,8 +189,8 @@ class AskUiControllerClient(AgentOs):
     @telemetry.record_call(exclude={"agent_os_target_computer"})
     @override
     def add_agent_os_target_computer(
-        self, agent_os_target_computer: AgentOsTargetComputer
-    ) -> AgentOsTargetComputer:
+        self, agent_os_target_computer: ComputerTarget
+    ) -> ComputerTarget:
         """
         Register an already-constructed target computer. Auto-connects if the
         client is currently connected.
@@ -206,13 +206,13 @@ class AskUiControllerClient(AgentOs):
     @override
     def reset_agent_os_target_computers(
         self,
-        agent_os_target_computers: list[AgentOsTargetComputer] | None = None,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
     ) -> None:
         """
         Disconnect (if connected) and replace the target computer list.
 
         Args:
-            agent_os_target_computers (list[AgentOsTargetComputer] | None, optional):
+            agent_os_target_computers (list[ComputerTarget] | None, optional):
                 New list of target computers to register after the reset. If
                 `None`, the list is left empty and a subsequent `connect()` will
                 fail until at least one target has been registered again. Same
@@ -235,7 +235,7 @@ class AskUiControllerClient(AgentOs):
 
     @telemetry.record_call()
     @override
-    def list_agent_os_target_computers(self) -> list[AgentOsTargetComputer]:
+    def list_agent_os_target_computers(self) -> list[ComputerTarget]:
         """Return all registered target computers."""
         self._reporter.add_message(
             self._REPORTER_SOURCE, "list_agent_os_target_computers()"
@@ -265,9 +265,7 @@ class AskUiControllerClient(AgentOs):
 
     @telemetry.record_call()
     @override
-    def switch_agent_os_target_computer(
-        self, computer_id: str
-    ) -> AgentOsTargetComputer:
+    def switch_agent_os_target_computer(self, computer_id: str) -> ComputerTarget:
         """
         Switch the active target computer by its `computer_id` (the user-supplied
         identifier; defaults to the target's `session_guid` when none was supplied
@@ -281,7 +279,7 @@ class AskUiControllerClient(AgentOs):
             computer_id (str): The computer id of the target to switch to.
 
         Returns:
-            AgentOsTargetComputer: The newly active target computer.
+            ComputerTarget: The newly active target computer.
         """
         self._reporter.add_message(
             self._REPORTER_SOURCE, f"switch_agent_os_target_computer({computer_id!r})"
@@ -320,7 +318,7 @@ class AskUiControllerClient(AgentOs):
     def connect(self) -> None:
         """
         Open a gRPC channel and session to every registered target computer via
-        the underlying `AgentOsTargetComputerManager`.
+        the underlying `ComputerTargetPool`.
         """
         self._manager.connect_all()
 
@@ -380,7 +378,7 @@ class AskUiControllerClient(AgentOs):
     def disconnect(self) -> None:
         """
         Close every open target-computer connection via the underlying
-        `AgentOsTargetComputerManager`.
+        `ComputerTargetPool`.
         """
         self._manager.disconnect_all()
 
@@ -390,7 +388,7 @@ class AskUiControllerClient(AgentOs):
         Context manager entry point that establishes the connection.
 
         Returns:
-            Self: The instance of AskUiControllerClient.
+            Self: The instance of MultiComputerTargetAgentOS.
         """
         self.connect()
         return self
@@ -1531,3 +1529,6 @@ class AskUiControllerClient(AgentOs):
                 pass
         message = "File contents are neither a supported image nor UTF-8 text"
         raise DesktopAgentOsError(message)
+
+
+AskUiControllerClient = MultiComputerTargetAgentOS

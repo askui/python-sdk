@@ -41,7 +41,7 @@ from askui.tools.exception_tool import ExceptionTool
 from .reporting import CompositeReporter, Reporter
 from .retry import Retry
 from .tools import AgentToolbox, ComputerAgentOsFacade, ModifierKey, PcKey
-from .tools.askui import AgentOsTargetComputer, AskUiControllerClient
+from .tools.askui import ComputerTarget, MultiComputerTargetAgentOS
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +68,10 @@ class ComputerAgent(Agent):
     Args:
         display (int, optional): The display number to use for screen interactions on the default local target. Ignored when `agent_os_target_computers` is provided. Defaults to `1`.
         reporters (list[Reporter] | None, optional): List of reporter instances for logging and reporting. If `None`, an empty list is used.
-        agent_os_target_computers (list[AgentOsTargetComputer] | None, optional):
+        agent_os_target_computers (list[ComputerTarget] | None, optional):
             Target computers the agent can route actions to. May mix one
-            `LocalAgentOsTargetComputer` (managing a controller subprocess on this
-            machine) with any number of `RemoteAgentOsTargetComputer`s pointing at
+            `LocalComputerTarget` (managing a controller subprocess on this
+            machine) with any number of `RemoteComputerTarget`s pointing at
             controllers already running on other machines. Constraints: at
             least one target, at most one local, and remote `address`es plus
             all `computer_id`s must be unique. The first entry becomes the
@@ -103,12 +103,12 @@ class ComputerAgent(Agent):
 
         ```python
         from askui import ComputerAgent
-        from askui.tools.askui import LocalAgentOsTargetComputer, RemoteAgentOsTargetComputer
+        from askui.tools.askui import LocalComputerTarget, RemoteComputerTarget
 
         with ComputerAgent(
             agent_os_target_computers=[
-                LocalAgentOsTargetComputer(computer_id="research-box"),
-                RemoteAgentOsTargetComputer(
+                LocalComputerTarget(computer_id="research-box"),
+                RemoteComputerTarget(
                     address="192.168.1.42:26000",
                     description="Writer box with a text editor open",
                     computer_id="writer-box",
@@ -175,7 +175,7 @@ class ComputerAgent(Agent):
         self,
         display: Annotated[int, Field(ge=1)] = 1,
         reporters: list[Reporter] | None = None,
-        agent_os_target_computers: list[AgentOsTargetComputer] | None = None,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
         settings: AgentSettings | None = None,
         retry: Retry | None = None,
         act_tools: list[Tool] | None = None,
@@ -184,7 +184,7 @@ class ComputerAgent(Agent):
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.tools = AgentToolbox(
-            agent_os=AskUiControllerClient(
+            agent_os=MultiComputerTargetAgentOS(
                 display=display,
                 reporter=reporter,
                 agent_os_target_computers=agent_os_target_computers,

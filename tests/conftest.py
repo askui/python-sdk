@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 from pytest_mock import MockerFixture
 
-from askui.tools.agent_os import AgentOs, Display, DisplaySize
+from askui.tools.agent_os import ComputerAgentOS, Display, DisplaySize
 
 
 @pytest.fixture
@@ -83,23 +83,25 @@ def path_fixtures_github_com__icon(path_fixtures_images: pathlib.Path) -> pathli
 
 
 @pytest.fixture
-def agent_os_mock(mocker: MockerFixture) -> AgentOs:
+def agent_os_mock(mocker: MockerFixture) -> ComputerAgentOS:
     """Fixture providing a mock agent os."""
-    mock = mocker.MagicMock(spec=AgentOs)
+    mock = mocker.MagicMock(spec=ComputerAgentOS)
     mock.retrieve_active_display.return_value = Display(
         id=1,
         name="Display 1",
         size=DisplaySize(width=100, height=100),
     )
     mock.screenshot.return_value = Image.new("RGB", (100, 100), color="white")
-    return cast("AgentOs", mock)
+    return cast("ComputerAgentOS", mock)
 
 
 @pytest.fixture
-def agent_os_mock_patch(mocker: MockerFixture, agent_os_mock: AgentOs) -> AgentOs:
-    """Patches `AskUiControllerClient` so `ComputerAgent` uses `agent_os_mock`."""
+def agent_os_mock_patch(
+    mocker: MockerFixture, agent_os_mock: ComputerAgentOS
+) -> ComputerAgentOS:
+    """Patches `MultiComputerTargetAgentOS` so `ComputerAgent` uses `agent_os_mock`."""
     mocker.patch(
-        "askui.computer_agent.AskUiControllerClient",
+        "askui.computer_agent.MultiComputerTargetAgentOS",
         return_value=agent_os_mock,
     )
     return agent_os_mock

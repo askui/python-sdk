@@ -1,17 +1,17 @@
 from .agent_os_target_computer import (
-    AgentOsTargetComputer,
-    LocalAgentOsTargetComputer,
-    RemoteAgentOsTargetComputer,
+    ComputerTarget,
+    LocalComputerTarget,
+    RemoteComputerTarget,
 )
-from .agent_os_target_computer_manager import (
-    AgentOsTargetComputerManager,
+from .askui_controller import MultiComputerTargetAgentOS
+from .computer_target_pool import (
+    ComputerTargetPool,
 )
-from .askui_controller import AskUiControllerClient
 
 __all__ = [
-    "AgentOsTargetComputer",
-    "AgentOsTargetComputerManager",
-    "AskUiControllerClient",
-    "LocalAgentOsTargetComputer",
-    "RemoteAgentOsTargetComputer",
+    "ComputerTarget",
+    "ComputerTargetPool",
+    "MultiComputerTargetAgentOS",
+    "LocalComputerTarget",
+    "RemoteComputerTarget",
 ]

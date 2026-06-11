@@ -10,8 +10,8 @@ from askui.models.shared.tool_tags import ToolTags
 
 if TYPE_CHECKING:
     from askui.tools.askui.agent_os_target_computer import (
-        AgentOsTargetComputer,
-        RemoteAgentOsTargetComputer,
+        ComputerTarget,
+        RemoteComputerTarget,
     )
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
         Controller_V1_pb2 as controller_v1_pbs,
@@ -219,7 +219,7 @@ class DisplaysListResponse(BaseModel):
 InputEvent = ClickEvent
 
 
-class AgentOs(ABC):
+class ComputerAgentOS(ABC):
     """
     Abstract base class for Agent OS. Cannot be instantiated directly.
 
@@ -684,8 +684,8 @@ class AgentOs(ABC):
         raise NotImplementedError
 
     def add_agent_os_target_computer(
-        self, agent_os_target_computer: "AgentOsTargetComputer"
-    ) -> "AgentOsTargetComputer":
+        self, agent_os_target_computer: "ComputerTarget"
+    ) -> "ComputerTarget":
         """Register an additional target computer. Auto-connects if connected."""
         raise NotImplementedError
 
@@ -693,18 +693,18 @@ class AgentOs(ABC):
         self,
         address: str,
         description: str,
-    ) -> "RemoteAgentOsTargetComputer":
+    ) -> "RemoteComputerTarget":
         """Register an additional remote target computer."""
         raise NotImplementedError
 
     def reset_agent_os_target_computers(
         self,
-        agent_os_target_computers: "list[AgentOsTargetComputer] | None" = None,
+        agent_os_target_computers: "list[ComputerTarget] | None" = None,
     ) -> None:
         """Disconnect (if connected) and replace the target computer list."""
         raise NotImplementedError
 
-    def list_agent_os_target_computers(self) -> "list[AgentOsTargetComputer]":
+    def list_agent_os_target_computers(self) -> "list[ComputerTarget]":
         """Return all registered target computers."""
         raise NotImplementedError
 
@@ -712,9 +712,7 @@ class AgentOs(ABC):
         """Return the `computer_id` of the currently active target computer."""
         raise NotImplementedError
 
-    def switch_agent_os_target_computer(
-        self, computer_id: str
-    ) -> "AgentOsTargetComputer":
+    def switch_agent_os_target_computer(self, computer_id: str) -> "ComputerTarget":
         """Switch the active target computer by its `computer_id`."""
         raise NotImplementedError
 
@@ -730,7 +728,7 @@ class AgentOs(ABC):
 
         Returns:
             AbstractContextManager[Self]: Context manager that yields this
-                `AgentOs` with the selected target active.
+                `ComputerAgentOS` with the selected target active.
 
         Example:
             ```python
@@ -784,3 +782,13 @@ class AgentOs(ABC):
             NotImplementedError: If the implementation does not support this operation.
         """
         raise NotImplementedError
+
+
+AgentOs = ComputerAgentOS
+"""Deprecated alias for `ComputerAgentOS`, kept for backward compatibility.
+
+`AgentOs` was renamed to `ComputerAgentOS` to reflect that it is the
+computer-specific Agent OS interface (mouse, keyboard, displays, ...) rather
+than a universal abstraction across all device types. Prefer `ComputerAgentOS`
+in new code.
+"""

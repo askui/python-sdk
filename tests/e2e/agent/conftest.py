@@ -27,7 +27,7 @@ from askui.models.models import LocateModel
 from askui.models.shared.settings import LocateSettings
 from askui.models.types.geometry import PointList
 from askui.reporting import Reporter, SimpleHtmlReporter
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 from askui.utils.image_utils import ImageSource
 
 
@@ -98,7 +98,7 @@ def combo_locate_model(path_fixtures: pathlib.Path) -> LocateModel:
 @pytest.fixture
 def agent_with_pta_model(
     pta_locate_model: LocateModel,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
 ) -> Generator[ComputerAgent, None, None]:
     with ComputerAgent(
@@ -113,7 +113,7 @@ def agent_with_pta_model(
 @pytest.fixture
 def agent_with_ocr_model(
     ocr_locate_model: LocateModel,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
 ) -> Generator[ComputerAgent, None, None]:
     with ComputerAgent(
@@ -128,7 +128,7 @@ def agent_with_ocr_model(
 @pytest.fixture
 def agent_with_ai_element_model(
     ai_element_locate_model: LocateModel,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
 ) -> Generator[ComputerAgent, None, None]:
     with ComputerAgent(
@@ -143,7 +143,7 @@ def agent_with_ai_element_model(
 @pytest.fixture
 def agent_with_combo_model(
     combo_locate_model: LocateModel,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
 ) -> Generator[ComputerAgent, None, None]:
     with ComputerAgent(
@@ -157,7 +157,7 @@ def agent_with_combo_model(
 
 @pytest.fixture
 def vision_agent(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
 ) -> Generator[ComputerAgent, None, None]:
     """Fixture providing a ComputerAgent instance."""

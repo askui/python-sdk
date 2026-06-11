@@ -1,6 +1,6 @@
 """Computer-specific tools.
 
-These tools require AgentOs (or ComputerAgentOsFacade) and are designed
+These tools require ComputerAgentOS (or ComputerAgentOsFacade) and are designed
 for use with VisionAgent.
 
 """

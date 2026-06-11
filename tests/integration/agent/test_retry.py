@@ -10,7 +10,7 @@ from askui.model_providers.detection_provider import DetectionProvider
 from askui.models.exceptions import ElementNotFoundError, ModelNotFoundError
 from askui.models.shared.settings import LocateSettings
 from askui.models.types.geometry import PointList
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 from askui.utils.image_utils import ImageSource
 
 
@@ -59,7 +59,7 @@ def always_failing_provider() -> FailingDetectionProvider:
 @pytest.fixture
 def agent_with_retry(
     failing_provider: FailingDetectionProvider,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
 ) -> ComputerAgent:
     return ComputerAgent(
         settings=AgentSettings(detection_provider=failing_provider),
@@ -69,7 +69,7 @@ def agent_with_retry(
 @pytest.fixture
 def agent_with_retry_on_multiple_exceptions(
     failing_provider: FailingDetectionProvider,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
 ) -> ComputerAgent:
     return ComputerAgent(
         settings=AgentSettings(detection_provider=failing_provider),
@@ -89,7 +89,7 @@ def agent_with_retry_on_multiple_exceptions(
 @pytest.fixture
 def agent_always_fail(
     always_failing_provider: FailingDetectionProvider,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
 ) -> ComputerAgent:
     return ComputerAgent(
         settings=AgentSettings(detection_provider=always_failing_provider),

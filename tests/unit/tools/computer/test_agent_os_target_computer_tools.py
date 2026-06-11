@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from askui.tools.agent_os import AgentOs
-from askui.tools.askui.agent_os_target_computer import RemoteAgentOsTargetComputer
+from askui.tools.agent_os import ComputerAgentOS
+from askui.tools.askui.agent_os_target_computer import RemoteComputerTarget
 from askui.tools.computer import (
     ComputerGetCurrentComputerTargetIdTool,
     ComputerListAgentOsTargetComputersTool,
@@ -13,8 +13,8 @@ from askui.tools.computer import (
 
 @pytest.fixture
 def fake_agent_os() -> MagicMock:
-    """A MagicMock that passes `isinstance(x, AgentOs)` checks."""
-    return MagicMock(spec=AgentOs)
+    """A MagicMock that passes `isinstance(x, ComputerAgentOS)` checks."""
+    return MagicMock(spec=ComputerAgentOS)
 
 
 class TestComputerListAgentOsTargetComputersTool:
@@ -25,10 +25,10 @@ class TestComputerListAgentOsTargetComputersTool:
     def test_returns_comma_separated_repr_of_targets(
         self, fake_agent_os: MagicMock
     ) -> None:
-        a = RemoteAgentOsTargetComputer(
+        a = RemoteComputerTarget(
             address="1.1.1.1:23000", description="a", computer_id="a"
         )
-        b = RemoteAgentOsTargetComputer(
+        b = RemoteComputerTarget(
             address="2.2.2.2:23000", description="b", computer_id="b"
         )
         fake_agent_os.list_agent_os_target_computers.return_value = [a, b]
@@ -56,7 +56,7 @@ class TestComputerSwitchAgentOsTargetComputerTool:
     def test_call_delegates_to_switch_agent_os_target_computer(
         self, fake_agent_os: MagicMock
     ) -> None:
-        switched = RemoteAgentOsTargetComputer(
+        switched = RemoteComputerTarget(
             address="1.1.1.1:23000", description="new", computer_id="new"
         )
         fake_agent_os.switch_agent_os_target_computer.return_value = switched

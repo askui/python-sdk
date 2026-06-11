@@ -19,7 +19,7 @@ from askui.models.models import GetModel
 from askui.models.shared.settings import GetSettings
 from askui.models.types.response_schemas import ResponseSchema
 from askui.reporting import Reporter
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 from askui.utils.source_utils import Source
 
 
@@ -97,7 +97,7 @@ class BrowserContextResponse(ResponseSchemaBase):
 )
 def test_get(
     vision_agent: ComputerAgent,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel | None,
@@ -141,7 +141,7 @@ def test_get(
     ],
 )
 def test_get_with_pdf_with_gemini_model(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_pdf: pathlib.Path,
@@ -178,7 +178,7 @@ def test_get_with_pdf_with_gemini_model(
     ],
 )
 def test_get_with_pdf_too_large(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_pdf: pathlib.Path,
@@ -229,7 +229,7 @@ def test_get_with_pdf_too_large_with_default_model(
     ],
 )
 def test_get_with_xlsx_with_gemini_model(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_excel: pathlib.Path,
@@ -275,7 +275,7 @@ class SalaryResponse(ResponseSchemaBase):
     ],
 )
 def test_get_with_xlsx_with_gemini_model_with_response_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_excel: pathlib.Path,
@@ -320,7 +320,7 @@ def test_get_with_docs_with_default_model(
 
 
 def test_get_with_fallback_model(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
 ) -> None:
@@ -387,7 +387,7 @@ def test_get_with_response_schema_with_default_value(
 )
 def test_get_with_response_schema(
     vision_agent: ComputerAgent,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel | None,
@@ -427,7 +427,7 @@ def test_get_with_response_schema(
     ],
 )
 def test_get_with_nested_and_inherited_response_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -465,7 +465,7 @@ class LinkedListNode(ResponseSchemaBase):
     ],
 )
 def test_get_with_recursive_response_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -498,7 +498,7 @@ def test_get_with_recursive_response_schema(
     ],
 )
 def test_get_with_string_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -535,7 +535,7 @@ def test_get_with_string_schema(
     ],
 )
 def test_get_with_boolean_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -566,7 +566,7 @@ def test_get_with_boolean_schema(
     ],
 )
 def test_get_with_integer_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -597,7 +597,7 @@ def test_get_with_integer_schema(
     ],
 )
 def test_get_with_float_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -628,7 +628,7 @@ def test_get_with_float_schema(
     ],
 )
 def test_get_returns_str_when_no_schema_specified(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -661,7 +661,7 @@ class Basis(ResponseSchemaBase):
     ],
 )
 def test_get_with_basis_schema(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -700,7 +700,7 @@ class BasisWithNestedRootModel(ResponseSchemaBase):
     ],
 )
 def test_get_with_nested_root_model(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -758,7 +758,7 @@ class PageDom(ResponseSchemaBase):
     ],
 )
 def test_get_with_deeply_nested_response_schema_with_model_that_does_not_support_recursion(
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,

@@ -14,15 +14,16 @@ from askui.tools.utils import process_exists, wait_for_port
 logger = logging.getLogger(__name__)
 
 
-class AgentOsTargetComputer:
+class ComputerTarget:
     """
-    Base class describing an Agent OS target computer that the
-    `AskUiControllerClient` can connect to.
+    Base class describing a computer target (a machine running the AskUI Agent
+    OS) that a `MultiComputerTargetAgentOS` client can connect to.
 
-    A target computer runs the server-side counterpart of the `AgentOs` client
-    abstraction: it exposes a gRPC API for OS-level operations (screenshot,
-    mouse, keyboard, ...) and is identified by a unique session GUID. Each
-    target computer also tracks which display it is currently operating against.
+    A computer target runs the server-side counterpart of the `ComputerAgentOS`
+    client abstraction: it exposes a gRPC API for OS-level operations
+    (screenshot, mouse, keyboard, ...) and is identified by a unique session
+    GUID. Each computer target also tracks which display it is currently
+    operating against.
 
     Args:
         address (str): gRPC address of the target computer
@@ -31,7 +32,7 @@ class AgentOsTargetComputer:
         display (int, optional): Display ID selected for this target computer.
             Defaults to `1`.
         computer_id (str | None, optional): Stable, human-friendly identifier for
-            the target computer. Used by `AgentOsTargetComputerManager` lookup
+            the target computer. Used by `ComputerTargetPool` lookup
             helpers. Must be unique across registered target computers. Defaults
             to the target computer's `session_guid`.
     """
@@ -103,9 +104,9 @@ class AgentOsTargetComputer:
         )
 
 
-class LocalAgentOsTargetComputer(AgentOsTargetComputer):
+class LocalComputerTarget(ComputerTarget):
     """
-    Local Agent OS target computer: manages an AskUI Remote Device Controller
+    Local computer target: manages an AskUI Remote Device Controller
     subprocess on this machine.
 
     Args:
@@ -128,7 +129,7 @@ class LocalAgentOsTargetComputer(AgentOsTargetComputer):
 
     def __init__(
         self,
-        description: str = "Local Agent OS target computer",
+        description: str = "Local computer target",
         settings: AskUiControllerSettings | None = None,
         address: str = "localhost:23000",
         discover_service: bool = True,
@@ -166,7 +167,7 @@ class LocalAgentOsTargetComputer(AgentOsTargetComputer):
                     [
                         "sc",
                         "query",
-                        LocalAgentOsTargetComputer._ASKUI_CORE_SERVICE_NAME,
+                        LocalComputerTarget._ASKUI_CORE_SERVICE_NAME,
                     ],
                     capture_output=True,
                     text=True,
@@ -178,7 +179,7 @@ class LocalAgentOsTargetComputer(AgentOsTargetComputer):
             except (OSError, subprocess.SubprocessError):
                 error_msg = (
                     "Failed to query "
-                    f"{LocalAgentOsTargetComputer._ASKUI_CORE_SERVICE_NAME} service"
+                    f"{LocalComputerTarget._ASKUI_CORE_SERVICE_NAME} service"
                 )
                 logger.debug(error_msg)
                 return False
@@ -186,13 +187,13 @@ class LocalAgentOsTargetComputer(AgentOsTargetComputer):
         return False
 
     def _discover_service(self, address: str) -> None:
-        if LocalAgentOsTargetComputer._is_askui_core_service_running():
+        if LocalComputerTarget._is_askui_core_service_running():
             service_msg = (
                 f"Detected running {self._ASKUI_CORE_SERVICE_NAME}; using port "
                 f"{self._ASKUI_CORE_SERVICE_PORT} (controller managed by service)"
             )
             logger.info(service_msg)
-            address = LocalAgentOsTargetComputer.replace_port(
+            address = LocalComputerTarget.replace_port(
                 address, self._ASKUI_CORE_SERVICE_PORT
             )
             self._is_service = True
@@ -290,9 +291,9 @@ class LocalAgentOsTargetComputer(AgentOsTargetComputer):
             self._process = None
 
 
-class RemoteAgentOsTargetComputer(AgentOsTargetComputer):
+class RemoteComputerTarget(ComputerTarget):
     """
-    Remote Agent OS target computer: the client connects to an already-running
+    Remote computer target: the client connects to an already-running
     controller on another machine.
 
     No process management is performed; `start()` and `stop()` are no-ops.
@@ -323,7 +324,7 @@ class RemoteAgentOsTargetComputer(AgentOsTargetComputer):
 
 
 __all__ = [
-    "AgentOsTargetComputer",
-    "LocalAgentOsTargetComputer",
-    "RemoteAgentOsTargetComputer",
+    "ComputerTarget",
+    "LocalComputerTarget",
+    "RemoteComputerTarget",
 ]

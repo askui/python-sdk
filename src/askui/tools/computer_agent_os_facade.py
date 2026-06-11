@@ -7,7 +7,7 @@ from typing_extensions import Self
 
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import (
-    AgentOs,
+    ComputerAgentOS,
     Coordinate,
     Display,
     DisplaySize,
@@ -22,8 +22,8 @@ from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
 
 if TYPE_CHECKING:
     from askui.tools.askui.agent_os_target_computer import (
-        AgentOsTargetComputer,
-        RemoteAgentOsTargetComputer,
+        ComputerTarget,
+        RemoteComputerTarget,
     )
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
         Controller_V1_pb2 as controller_v1_pbs,
@@ -35,15 +35,15 @@ if TYPE_CHECKING:
     )
 
 
-class ComputerAgentOsFacade(AgentOs):
+class ComputerAgentOsFacade(ComputerAgentOS):
     """
-    Facade for AgentOs that adds coordinate scaling functionality.
+    Facade for ComputerAgentOS that adds coordinate scaling functionality.
 
     This class is used to scale the coordinates to the target resolution
     and back to the real screen resolution.
     """
 
-    def __init__(self, agent_os: AgentOs) -> None:
+    def __init__(self, agent_os: ComputerAgentOS) -> None:
         self._agent_os = agent_os
         self._target_resolution: tuple[int, int] = (1024, 768)
         self._real_screen_resolution: DisplaySize | None = None
@@ -274,34 +274,32 @@ class ComputerAgentOsFacade(AgentOs):
         self._agent_os.set_window_in_focus(process_id, window_id)
 
     def add_agent_os_target_computer(
-        self, agent_os_target_computer: "AgentOsTargetComputer"
-    ) -> "AgentOsTargetComputer":
+        self, agent_os_target_computer: "ComputerTarget"
+    ) -> "ComputerTarget":
         return self._agent_os.add_agent_os_target_computer(agent_os_target_computer)
 
     def add_remote_agent_os_target_computer(
         self,
         address: str,
         description: str,
-    ) -> "RemoteAgentOsTargetComputer":
+    ) -> "RemoteComputerTarget":
         return self._agent_os.add_remote_agent_os_target_computer(
             address=address, description=description
         )
 
     def reset_agent_os_target_computers(
         self,
-        agent_os_target_computers: "list[AgentOsTargetComputer] | None" = None,
+        agent_os_target_computers: "list[ComputerTarget] | None" = None,
     ) -> None:
         self._agent_os.reset_agent_os_target_computers(agent_os_target_computers)
 
-    def list_agent_os_target_computers(self) -> "list[AgentOsTargetComputer]":
+    def list_agent_os_target_computers(self) -> "list[ComputerTarget]":
         return self._agent_os.list_agent_os_target_computers()
 
     def get_current_computer_target_id(self, report: bool = True) -> str:
         return self._agent_os.get_current_computer_target_id(report=report)
 
-    def switch_agent_os_target_computer(
-        self, computer_id: str
-    ) -> "AgentOsTargetComputer":
+    def switch_agent_os_target_computer(self, computer_id: str) -> "ComputerTarget":
         agent_os_target_computer = self._agent_os.switch_agent_os_target_computer(
             computer_id
         )

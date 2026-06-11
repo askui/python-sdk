@@ -5,13 +5,13 @@ from askui import ComputerAgent
 from askui import locators as loc
 from askui.container import telemetry
 from askui.telemetry.processors import Segment, SegmentSettings
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 
 
 @pytest.mark.timeout(60)
 def test_telemetry_with_nonexistent_domain_should_not_block(
     github_login_screenshot: Image.Image,
-    agent_os_mock_patch: AgentOs,  # noqa: ARG001
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
 ) -> None:
     telemetry.set_processors(
         [

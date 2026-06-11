@@ -2,7 +2,7 @@ from typing import Any
 
 from askui.models.shared.tool_tags import ToolTags
 from askui.models.shared.tools import ToolWithAgentOS
-from askui.tools import AgentOs
+from askui.tools import ComputerAgentOS
 from askui.tools.agent_os_type_error import AgentOsTypeError
 from askui.tools.android.agent_os import AndroidAgentOs
 
@@ -41,11 +41,11 @@ class AndroidBaseTool(ToolWithAgentOS):
         return agent_os
 
     @agent_os.setter
-    def agent_os(self, agent_os: AgentOs | AndroidAgentOs) -> None:
+    def agent_os(self, agent_os: ComputerAgentOS | AndroidAgentOs) -> None:
         """Set the agent OS.
 
         Args:
-            agent_os (AgentOs | AndroidAgentOs): The agent OS instance to set.
+            agent_os (ComputerAgentOS | AndroidAgentOs): The agent OS instance to set.
 
         Raises:
             TypeError: If the agent OS is not an AndroidAgentOs instance.
