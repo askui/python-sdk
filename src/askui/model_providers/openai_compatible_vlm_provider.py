@@ -4,6 +4,7 @@ import httpx
 from openai import OpenAI
 
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
+from askui.models.shared.image_scaler import ImageScaler
 
 
 class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
@@ -20,6 +21,12 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
             (e.g. ``"https://my-host/v1/chat/completions"``).
         model_id (str): Model name expected by the deployment.
         api_key (str | None, optional): API key for the endpoint.
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, inherits from `OpenAIVlmProvider`.
+        max_image_edge (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE``
+            from the environment if not provided.  Inherits the default from
+            `OpenAIVlmProvider` (2048).
 
     Example:
         ```python
@@ -41,6 +48,8 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
         endpoint_url: str,
         model_id: str | None = None,
         api_key: str | None = None,
+        image_scaler: ImageScaler | None = None,
+        max_image_edge: int | None = None,
     ) -> None:
         def _rewrite_url(request: httpx.Request) -> None:
             request.url = httpx.URL(endpoint_url)
@@ -56,4 +65,6 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
         super().__init__(
             model_id=model_id,
             client=client,
+            image_scaler=image_scaler,
+            max_image_edge=max_image_edge,
         )

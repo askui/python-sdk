@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from PIL import Image
+
 from askui.models.shared.agent_message_param import (
     MessageParam,
     ThinkingConfigParam,
@@ -12,11 +14,18 @@ from askui.models.shared.coordinate_space import (
     PixelCoordinateSpace,
     VlmCoordinateSpace,
 )
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
+from askui.utils.llm_image_utils import compute_contained_size, resize_image
 from askui.utils.model_pricing import ModelPricing
 
 _DEFAULT_COORDINATE_SPACE = PixelCoordinateSpace()
+
+
+def _default_image_scaler(image: Image.Image) -> Image.Image:
+    target = compute_contained_size(image.width, image.height)
+    return resize_image(image, target)
 
 
 class VlmProvider(ABC):
@@ -69,6 +78,14 @@ class VlmProvider(ABC):
         Override in subclasses to provide model-specific pricing.
         """
         return None
+
+    @property
+    def image_scaler(self) -> ImageScaler:
+        """Callable that preprocesses a screenshot before sending to the model.
+
+        Override in subclasses for provider-specific sizing.
+        """
+        return _default_image_scaler
 
     def augment_system_prompt(self, system: SystemPrompt) -> SystemPrompt:
         """Hook for providers to augment the system prompt before sending.

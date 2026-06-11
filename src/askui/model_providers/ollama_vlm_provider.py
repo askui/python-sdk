@@ -10,6 +10,7 @@ from askui.models.shared.coordinate_space import (
     ScaledCoordinateSpace,
     VlmCoordinateSpace,
 )
+from askui.models.shared.image_scaler import ImageScaler
 
 _DEFAULT_BASE_URL = "http://localhost:11434/v1"
 _DEFAULT_MODEL_ID = "qwen3.5"
@@ -40,6 +41,12 @@ class OllamaVlmProvider(OpenAIVlmProvider):
         coordinate_space (VlmCoordinateSpace | None, optional): The coordinate
             grid the model emits coordinates in.  ``None`` (the default)
             enables auto-detection based on ``model_id``.
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, inherits from `OpenAIVlmProvider`.
+        max_image_edge (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE``
+            from the environment if not provided.  Inherits the default from
+            `OpenAIVlmProvider` (2048).
 
     Example:
         ```python
@@ -60,6 +67,8 @@ class OllamaVlmProvider(OpenAIVlmProvider):
         base_url: str = _DEFAULT_BASE_URL,
         client: OpenAI | None = None,
         coordinate_space: VlmCoordinateSpace | None = None,
+        image_scaler: ImageScaler | None = None,
+        max_image_edge: int | None = None,
     ) -> None:
         self._coordinate_space_override = coordinate_space
         super().__init__(
@@ -68,6 +77,8 @@ class OllamaVlmProvider(OpenAIVlmProvider):
             base_url=base_url,
             client=client,
             coordinate_space=coordinate_space or PixelCoordinateSpace(),
+            image_scaler=image_scaler,
+            max_image_edge=max_image_edge,
         )
 
     @property

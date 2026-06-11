@@ -2,35 +2,37 @@ from typing import Literal
 
 from PIL import Image
 
-from askui.models.shared.coordinate_space import (
-    SCREENSHOT_RESOLUTION,
-    VlmCoordinateSpace,
-)
+from askui.models.shared.coordinate_space import VlmCoordinateSpace
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import Display, ModifierKey, PcKey
 from askui.tools.playwright.agent_os import PlaywrightAgentOs
-from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
+from askui.utils.image_utils import scale_coordinates
 
 
 class PlaywrightAgentOsFacade(PlaywrightAgentOs):
     """Facade for `PlaywrightAgentOs` that adds coordinate scaling.
 
-    Screenshots are scaled down to a fixed target resolution so that the
-    AI model always sees a consistent image size.  Coordinate-based inputs
+    Screenshots are scaled using the provider's image scaler so that the
+    AI model sees an optimally sized image.  Coordinate-based inputs
     (``mouse_move``) are scaled back up to the real page resolution before
     being forwarded to the underlying agent OS.
 
     Args:
         agent_os (PlaywrightAgentOs): The real Playwright agent OS to wrap.
+        coordinate_space (VlmCoordinateSpace): Coordinate grid the model uses.
+        image_scaler (ImageScaler): Callable to preprocess screenshots.
     """
 
     def __init__(
         self,
         agent_os: PlaywrightAgentOs,
         coordinate_space: VlmCoordinateSpace,
+        image_scaler: ImageScaler,
     ) -> None:
         self._agent_os = agent_os
-        self._target_resolution: tuple[int, int] = SCREENSHOT_RESOLUTION
+        self._image_scaler = image_scaler
+        self._target_resolution: tuple[int, int] | None = None
         self._coordinate_space: VlmCoordinateSpace = coordinate_space
         self._real_screen_resolution: tuple[int, int] | None = None
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
@@ -48,7 +50,15 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
     def screenshot(self, report: bool = True) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
         self._real_screen_resolution = screenshot.size
-        return scale_image_to_fit(screenshot, self._target_resolution)
+        scaled = self._image_scaler(screenshot)
+        self._target_resolution = scaled.size
+        return scaled
+
+    def _ensure_target_resolution(self) -> tuple[int, int]:
+        if self._target_resolution is None:
+            self.screenshot(report=False)
+        assert self._target_resolution is not None  # noqa: S101
+        return self._target_resolution
 
     def _scale_coordinates(
         self,
@@ -61,15 +71,17 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
                 report=False,
             ).size
 
+        target_resolution = self._ensure_target_resolution()
+
         if from_agent:
             if self._coordinate_space.maps_to_screenshot_pixels:
                 mapped_x, mapped_y = self._coordinate_space.map_to_target(
-                    x, y, self._target_resolution
+                    x, y, target_resolution
                 )
                 return scale_coordinates(
                     (mapped_x, mapped_y),
                     self._real_screen_resolution,
-                    self._target_resolution,
+                    target_resolution,
                     inverse=True,
                 )
             return self._coordinate_space.map_to_target(
@@ -79,7 +91,7 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
         return scale_coordinates(
             (int(x), int(y)),
             self._real_screen_resolution,
-            self._target_resolution,
+            target_resolution,
             inverse=False,
         )
 

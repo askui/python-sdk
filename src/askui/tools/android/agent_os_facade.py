@@ -2,14 +2,12 @@ from typing import List, Optional, Tuple
 
 from PIL import Image
 
-from askui.models.shared.coordinate_space import (
-    SCREENSHOT_RESOLUTION,
-    VlmCoordinateSpace,
-)
+from askui.models.shared.coordinate_space import VlmCoordinateSpace
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.android.agent_os import ANDROID_KEY, AndroidAgentOs, AndroidDisplay
 from askui.tools.android.uiautomator_hierarchy import UIElementCollection
-from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
+from askui.utils.image_utils import scale_coordinates
 
 
 class AndroidAgentOsFacade(AndroidAgentOs):
@@ -23,9 +21,11 @@ class AndroidAgentOsFacade(AndroidAgentOs):
         self,
         agent_os: AndroidAgentOs,
         coordinate_space: VlmCoordinateSpace,
+        image_scaler: ImageScaler,
     ) -> None:
         self._agent_os: AndroidAgentOs = agent_os
-        self._target_resolution: Tuple[int, int] = SCREENSHOT_RESOLUTION
+        self._image_scaler = image_scaler
+        self._target_resolution: Optional[Tuple[int, int]] = None
         self._coordinate_space: VlmCoordinateSpace = coordinate_space
         self._real_screen_resolution: Optional[Tuple[int, int]] = None
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
@@ -41,10 +41,15 @@ class AndroidAgentOsFacade(AndroidAgentOs):
     def screenshot(self) -> Image.Image:
         screenshot = self._agent_os.screenshot()
         self._real_screen_resolution = screenshot.size
-        return scale_image_to_fit(
-            screenshot,
-            self._target_resolution,
-        )
+        scaled = self._image_scaler(screenshot)
+        self._target_resolution = scaled.size
+        return scaled
+
+    def _ensure_target_resolution(self) -> Tuple[int, int]:
+        if self._target_resolution is None:
+            self.screenshot()
+        assert self._target_resolution is not None  # noqa: S101
+        return self._target_resolution
 
     def _scale_coordinates(
         self,
@@ -55,15 +60,17 @@ class AndroidAgentOsFacade(AndroidAgentOs):
         if self._real_screen_resolution is None:
             self._real_screen_resolution = self._agent_os.screenshot().size
 
+        target_resolution = self._ensure_target_resolution()
+
         if from_agent:
             if self._coordinate_space.maps_to_screenshot_pixels:
                 mapped_x, mapped_y = self._coordinate_space.map_to_target(
-                    x, y, self._target_resolution
+                    x, y, target_resolution
                 )
                 return scale_coordinates(
                     (mapped_x, mapped_y),
                     self._real_screen_resolution,
-                    self._target_resolution,
+                    target_resolution,
                     inverse=True,
                 )
             return self._coordinate_space.map_to_target(
@@ -73,7 +80,7 @@ class AndroidAgentOsFacade(AndroidAgentOs):
         return scale_coordinates(
             (int(x), int(y)),
             self._real_screen_resolution,
-            self._target_resolution,
+            target_resolution,
             inverse=False,
         )
 

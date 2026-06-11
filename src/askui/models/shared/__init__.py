@@ -6,6 +6,7 @@ from .coordinate_space import (
     ScaledCoordinateSpace,
     VlmCoordinateSpace,
 )
+from .image_scaler import ImageScaler
 from .tool_tags import ToolTags
 
 try:
@@ -19,6 +20,7 @@ except ImportError:
 __all__ = [
     "AndroidBaseTool",
     "ComputerBaseTool",
+    "ImageScaler",
     "NormalizedCoordinateSpace",
     "PixelCoordinateSpace",
     "ScaledCoordinateSpace",

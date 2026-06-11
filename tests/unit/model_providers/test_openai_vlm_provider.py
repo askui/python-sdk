@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock
 
 from openai import OpenAI
+from PIL import Image
 
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
 from askui.models.shared.agent_message_param import MessageParam
@@ -74,67 +75,77 @@ class TestOpenAIVlmProvider:
         rendered = str(augmented)
         assert "You are a helpful assistant." in rendered
         assert "1000x1000 normalised grid" in rendered
-        assert "1024x768" in rendered
 
-    def test_augment_system_prompt_pixel_bounds_when_matching(self) -> None:
+    def test_augment_system_prompt_pixel_coordinate_space(self) -> None:
         provider = OpenAIVlmProvider(model_id="gpt-4o", api_key="sk-test")
         system = SystemPrompt(prompt="Base prompt.")
         augmented = provider.augment_system_prompt(system)
 
         rendered = str(augmented)
         assert "normalised grid" not in rendered
-        assert "0 <= x < 1024" in rendered
+        assert "pixel space matching the screenshot dimensions" in rendered
+
+
+class TestImageScaler:
+    def test_default_scaler_returns_valid_image(self) -> None:
+        provider = OpenAIVlmProvider(model_id="gpt-4o", api_key="sk-test")
+        img = Image.new("RGB", (1920, 1080))
+        scaled = provider.image_scaler(img)
+        assert scaled.width <= 2048
+        assert scaled.height <= 2048
+
+    def test_custom_scaler_override(self) -> None:
+        def custom_scaler(image: Image.Image) -> Image.Image:
+            return image.resize((100, 100))
+
+        provider = OpenAIVlmProvider(
+            model_id="gpt-4o",
+            api_key="sk-test",
+            image_scaler=custom_scaler,
+        )
+        img = Image.new("RGB", (1920, 1080))
+        scaled = provider.image_scaler(img)
+        assert scaled.size == (100, 100)
 
 
 class TestPixelCoordinateSpacePrompt:
-    def test_shows_pixel_bounds(self) -> None:
+    def test_shows_pixel_space_description(self) -> None:
         cs = PixelCoordinateSpace()
-        result = cs.build_prompt_section((1024, 768))
-        assert "0 <= x < 1024" in result
-        assert "0 <= y < 768" in result
+        result = cs.build_prompt_section()
+        assert "pixel space matching the screenshot dimensions" in result
         assert "normalised grid" not in result
 
-    def test_includes_padding_and_origin_info(self) -> None:
+    def test_includes_origin_info(self) -> None:
         cs = PixelCoordinateSpace()
-        result = cs.build_prompt_section((1024, 768))
-        assert "black padding" in result
+        result = cs.build_prompt_section()
         assert "top-left" in result
 
 
 class TestScaledCoordinateSpacePrompt:
     def test_shows_normalised_grid(self) -> None:
         cs = ScaledCoordinateSpace(width=1000, height=1000)
-        result = cs.build_prompt_section((1024, 768))
-        assert "1024x768" in result
+        result = cs.build_prompt_section()
         assert "1000x1000 normalised grid" in result
         assert "0 <= x < 1000" in result
         assert "0 <= y < 1000" in result
 
-    def test_matching_resolution_shows_pixel_bounds(self) -> None:
-        cs = ScaledCoordinateSpace(width=1024, height=768)
-        result = cs.build_prompt_section((1024, 768))
-        assert "0 <= x < 1024" in result
-        assert "normalised grid" not in result
-
-    def test_includes_padding_and_origin_info(self) -> None:
+    def test_includes_origin_info(self) -> None:
         cs = ScaledCoordinateSpace(width=1000, height=1000)
-        result = cs.build_prompt_section((1024, 768))
-        assert "black padding" in result
+        result = cs.build_prompt_section()
         assert "top-left" in result
 
 
 class TestNormalizedCoordinateSpacePrompt:
     def test_shows_normalised_floats(self) -> None:
         cs = NormalizedCoordinateSpace()
-        result = cs.build_prompt_section((1024, 768))
+        result = cs.build_prompt_section()
         assert "0.0 <= x <= 1.0" in result
         assert "0.0 <= y <= 1.0" in result
         assert "normalised floats" in result
 
-    def test_includes_padding_and_origin_info(self) -> None:
+    def test_includes_origin_info(self) -> None:
         cs = NormalizedCoordinateSpace()
-        result = cs.build_prompt_section((1024, 768))
-        assert "black padding" in result
+        result = cs.build_prompt_section()
         assert "top-left" in result
 
 

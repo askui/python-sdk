@@ -2,10 +2,8 @@ from typing import TYPE_CHECKING
 
 from PIL import Image
 
-from askui.models.shared.coordinate_space import (
-    SCREENSHOT_RESOLUTION,
-    VlmCoordinateSpace,
-)
+from askui.models.shared.coordinate_space import VlmCoordinateSpace
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import (
     AgentOs,
@@ -19,7 +17,7 @@ from askui.tools.agent_os import (
     PcKey,
 )
 from askui.tools.askui.askui_controller import RenderObjectStyle  # noqa: TC001
-from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
+from askui.utils.image_utils import scale_coordinates
 
 if TYPE_CHECKING:
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
@@ -44,9 +42,11 @@ class ComputerAgentOsFacade(AgentOs):
         self,
         agent_os: AgentOs,
         coordinate_space: VlmCoordinateSpace,
+        image_scaler: ImageScaler,
     ) -> None:
         self._agent_os = agent_os
-        self._target_resolution: tuple[int, int] = SCREENSHOT_RESOLUTION
+        self._image_scaler = image_scaler
+        self._target_resolution: tuple[int, int] | None = None
         self._coordinate_space: VlmCoordinateSpace = coordinate_space
         self._real_screen_resolution: DisplaySize | None = None
         self.tags.append(ToolTags.SCALED_AGENT_OS.value)
@@ -64,7 +64,9 @@ class ComputerAgentOsFacade(AgentOs):
         self._real_screen_resolution = DisplaySize(
             width=screenshot.width, height=screenshot.height
         )
-        return scale_image_to_fit(screenshot, self._target_resolution)
+        scaled = self._image_scaler(screenshot)
+        self._target_resolution = scaled.size
+        return scaled
 
     def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
         scaled_x, scaled_y = self._scale_coordinates_back(x, y)
@@ -299,7 +301,7 @@ class ComputerAgentOsFacade(AgentOs):
         """
         response = self._agent_os.get_file(path)
         if isinstance(response, Image.Image):
-            return scale_image_to_fit(response, self._target_resolution)
+            return self._image_scaler(response)
         return response
 
     def remove_virtual_displays(self) -> None:
@@ -308,6 +310,12 @@ class ComputerAgentOsFacade(AgentOs):
         """
         self._agent_os.remove_virtual_displays()
         self._real_screen_resolution = None
+
+    def _ensure_target_resolution(self) -> tuple[int, int]:
+        if self._target_resolution is None:
+            self.screenshot(report=False)
+        assert self._target_resolution is not None  # noqa: S101
+        return self._target_resolution
 
     def _scale_coordinates_back(
         self,
@@ -319,6 +327,7 @@ class ComputerAgentOsFacade(AgentOs):
         if self._real_screen_resolution is None:
             self._real_screen_resolution = self._agent_os.retrieve_active_display().size
 
+        target_resolution = self._ensure_target_resolution()
         real_size = (
             self._real_screen_resolution.width,
             self._real_screen_resolution.height,
@@ -327,12 +336,12 @@ class ComputerAgentOsFacade(AgentOs):
         if from_agent:
             if self._coordinate_space.maps_to_screenshot_pixels:
                 mapped_x, mapped_y = self._coordinate_space.map_to_target(
-                    x, y, self._target_resolution
+                    x, y, target_resolution
                 )
                 return scale_coordinates(
                     (mapped_x, mapped_y),
                     real_size,
-                    self._target_resolution,
+                    target_resolution,
                     inverse=True,
                     check_coordinates_in_bounds=check_coordinates_in_bounds,
                 )
@@ -341,7 +350,7 @@ class ComputerAgentOsFacade(AgentOs):
         return scale_coordinates(
             (int(x), int(y)),
             real_size,
-            self._target_resolution,
+            target_resolution,
             inverse=False,
             check_coordinates_in_bounds=check_coordinates_in_bounds,
         )
