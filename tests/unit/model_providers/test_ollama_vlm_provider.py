@@ -7,7 +7,6 @@ from openai import OpenAI
 from askui.model_providers.ollama_vlm_provider import OllamaVlmProvider
 from askui.models.shared.agent_message_param import MessageParam
 from askui.models.shared.coordinate_space import (
-    NormalizedCoordinateSpace,
     PixelCoordinateSpace,
     ScaledCoordinateSpace,
 )
@@ -68,11 +67,15 @@ class TestOllamaVlmProvider:
 
     def test_coordinate_space_auto_detects_kimi(self) -> None:
         provider = OllamaVlmProvider(model_id="kimi-vl")
-        assert provider.coordinate_space == NormalizedCoordinateSpace()
+        assert provider.coordinate_space == ScaledCoordinateSpace(
+            width=1000, height=1000
+        )
 
     def test_coordinate_space_auto_detects_kimi_case_insensitive(self) -> None:
         provider = OllamaVlmProvider(model_id="Kimi-VL-A3B")
-        assert provider.coordinate_space == NormalizedCoordinateSpace()
+        assert provider.coordinate_space == ScaledCoordinateSpace(
+            width=1000, height=1000
+        )
 
     def test_coordinate_space_default_for_non_qwen(self) -> None:
         provider = OllamaVlmProvider(model_id="llava")
