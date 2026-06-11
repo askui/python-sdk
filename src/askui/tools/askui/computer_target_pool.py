@@ -1,47 +1,26 @@
-import logging
-from dataclasses import dataclass
-
-import grpc
-
 from askui.tools.askui.agent_os_target_computer import (
     ComputerTarget,
-    LocalComputerTarget,
     RemoteComputerTarget,
 )
-from askui.tools.askui.askui_ui_controller_grpc.generated import (
-    Controller_V1_pb2 as controller_v1_pbs,
-)
-from askui.tools.askui.askui_ui_controller_grpc.generated import (
-    Controller_V1_pb2_grpc as controller_v1,
-)
+from askui.tools.askui.computer_target_connection import ComputerTargetConnection
 from askui.tools.askui.exceptions import AskUiControllerError
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class _Connection:
-    """gRPC connection state for a single computer target."""
-
-    target: ComputerTarget
-    channel: grpc.Channel
-    stub: controller_v1.ControllerAPIStub
-    session_info: controller_v1_pbs.SessionInfo
-    started_process: bool
 
 
 class ComputerTargetPool:
     """
-    Manages a collection of `ComputerTarget` instances and their gRPC
-    connections, and tracks the currently active one.
+    Manages a collection of `ComputerTarget` instances and tracks the currently
+    active one. Each target owns its own gRPC connection
+    (`ComputerTarget.connection`); the pool only orchestrates connecting /
+    disconnecting them and selecting the active one.
 
     Responsibilities:
         - Register / unregister `ComputerTarget` instances with uniqueness
           constraints (at most one local, unique computer ids / session GUIDs,
           unique remote addresses).
-        - Open and close gRPC channels and sessions to each registered target.
-        - Track which registered target is currently active and expose the stub /
-          session info needed to route agent-os actions to it.
+        - Drive `connect()` / `disconnect()` on registered targets (individually
+          or all at once).
+        - Track which registered target is currently active and expose its
+          connection needed to route agent-os actions to it.
 
     The first target added becomes active by default. Use `switch` to change
     which target is active. `connect_all` opens connections to every registered
@@ -61,10 +40,10 @@ class ComputerTargetPool:
         agent_os_target_computers: list[ComputerTarget] | None = None,
     ) -> None:
         # Single store. Python dicts preserve insertion order, so this also
-        # defines `list()` order and the first-added-is-active semantics.
+        # defines `list()` order and the first-added-is-active semantics. Each
+        # target owns its own connection, so no separate connection store is
+        # needed here.
         self._by_computer_id: dict[str, ComputerTarget] = {}
-        # Open gRPC connections, keyed by `computer_id`.
-        self._connections: dict[str, _Connection] = {}
         self._active_computer_id: str | None = None
         if agent_os_target_computers:
             for target in agent_os_target_computers:
@@ -72,8 +51,8 @@ class ComputerTargetPool:
 
     @property
     def is_connected(self) -> bool:
-        """`True` when at least one gRPC connection is open."""
-        return bool(self._connections)
+        """`True` when at least one registered target has an open connection."""
+        return any(t.is_connected for t in self._by_computer_id.values())
 
     def add(self, target: ComputerTarget) -> ComputerTarget:
         """
@@ -173,7 +152,7 @@ class ComputerTargetPool:
         """
         target = self._require(computer_id)
         self._active_computer_id = computer_id
-        if self.is_connected and computer_id not in self._connections:
+        if self.is_connected and not target.is_connected:
             self.connect(target)
         return target
 
@@ -203,7 +182,7 @@ class ComputerTargetPool:
             raise AskUiControllerError(error_msg)
         return target
 
-    def active_connection(self) -> _Connection:
+    def active_connection(self) -> ComputerTargetConnection:
         """
         Return the gRPC connection for the currently active target.
 
@@ -212,27 +191,13 @@ class ComputerTargetPool:
                 target has no open connection (i.e. `connect_all()` has not been
                 called).
         """
-        target = self.require_active()
-        conn = self._connections.get(target.computer_id)
-        if conn is None:
-            error_msg = (
-                f"Active Agent OS target computer {target.description!r} "
-                f"(computer_id={target.computer_id!r}, "
-                f"address={target.address}) "
-                "is not connected. Call `MultiComputerTargetAgentOS.connect()` first."
-            )
-            raise AskUiControllerError(error_msg)
-        return conn
+        return self.require_active().connection
 
     def connect_all(self) -> None:
         """
-        Open a gRPC channel and session to every registered Agent OS target.
-
-        For each target: starts the local process when `is_local` and
-        `is_service` is `False`, opens an insecure gRPC channel, starts a
-        session, starts execution, and sets the configured display. Targets
-        already connected are skipped, so calling `connect_all()` twice is
-        safe.
+        Open the connection to every registered Agent OS target via
+        `ComputerTarget.connect()`. Targets already connected are skipped, so
+        calling `connect_all()` twice is safe.
 
         Raises:
             AskUiControllerError: If no targets are registered.
@@ -258,107 +223,30 @@ class ComputerTargetPool:
 
     def connect(self, target: ComputerTarget) -> None:
         """
-        Open a gRPC channel and session to a single registered Agent OS target.
-        Idempotent: returns silently if the target is already connected.
+        Open the connection to a single registered Agent OS target. Idempotent:
+        returns silently if the target is already connected. Delegates to
+        `ComputerTarget.connect()`.
         """
-        if target.computer_id in self._connections:
-            return
-        started_process = False
-        if isinstance(target, LocalComputerTarget) and not target.is_service:
-            target.start()
-            started_process = True
-        channel = grpc.insecure_channel(
-            target.address,
-            options=[
-                ("grpc.max_send_message_length", 2**30),
-                ("grpc.max_receive_message_length", 2**30),
-                ("grpc.default_deadline", 300000),
-            ],
-        )
-        stub = controller_v1.ControllerAPIStub(channel)
-        try:
-            session_response: controller_v1_pbs.Response_StartSession = (
-                stub.StartSession(
-                    controller_v1_pbs.Request_StartSession(
-                        sessionGUID=target.session_guid,
-                        immediateExecution=True,
-                    )
-                )
-            )
-            session_info = session_response.sessionInfo
-            stub.StartExecution(
-                controller_v1_pbs.Request_StartExecution(sessionInfo=session_info)
-            )
-            stub.SetActiveDisplay(
-                controller_v1_pbs.Request_SetActiveDisplay(displayID=target.display)
-            )
-        except Exception as e:
-            try:
-                channel.close()
-            finally:
-                if started_process:
-                    target.stop()
-            if hasattr(e, "add_note"):
-                e.add_note(
-                    f"While connecting to Agent OS target computer "
-                    f"{target.description!r} "
-                    f"(computer_id={target.computer_id!r}, "
-                    f"session_guid={target.session_guid}, "
-                    f"display={target.display}, "
-                    f"address={target.address})"
-                )
-            raise
-        self._connections[target.computer_id] = _Connection(
-            target=target,
-            channel=channel,
-            stub=stub,
-            session_info=session_info,
-            started_process=started_process,
-        )
+        target.connect()
 
     def disconnect_all(self) -> None:
         """
-        Close every open Agent OS target connection.
-
-        For each connection: stops execution, ends the session, closes the gRPC
-        channel, and (only when this manager started the local process) stops
-        the controller process. Errors are logged but do not abort the loop -
-        a partial failure on one target still releases the others.
+        Close every open Agent OS target connection. Errors on one connection
+        are logged but do not abort the loop - a partial failure still releases
+        the others.
         """
-        for computer_id in list(self._connections.keys()):
-            self.disconnect(computer_id)
+        for target in self._by_computer_id.values():
+            target.disconnect()
 
     def disconnect(self, computer_id: str) -> None:
         """
         Close a single open Agent OS target connection identified by its
-        `computer_id`. No-op if no such connection is open.
+        `computer_id`. No-op if no such connection is open or no such target is
+        registered. Delegates to `ComputerTarget.disconnect()`.
         """
-        conn = self._connections.pop(computer_id, None)
-        if conn is None:
-            return
-        try:
-            conn.stub.StopExecution(
-                controller_v1_pbs.Request_StopExecution(sessionInfo=conn.session_info)
-            )
-            conn.stub.EndSession(
-                controller_v1_pbs.Request_EndSession(sessionInfo=conn.session_info)
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "Error stopping execution/session for controller %s", computer_id
-            )
-        try:
-            conn.channel.close()
-        except Exception:  # noqa: BLE001
-            logger.exception("Error closing channel for controller %s", computer_id)
-        if conn.started_process:
-            try:
-                conn.target.stop()
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "Error stopping client-started controller process for %s",
-                    computer_id,
-                )
+        target = self._by_computer_id.get(computer_id)
+        if target is not None:
+            target.disconnect()
 
     def __len__(self) -> int:
         return len(self._by_computer_id)

@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 from typing_extensions import override
 
 from askui.tools.askui.askui_controller_settings import AskUiControllerSettings
+from askui.tools.askui.computer_target_connection import ComputerTargetConnection
+from askui.tools.askui.exceptions import AskUiControllerError
 from askui.tools.utils import process_exists, wait_for_port
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,7 @@ class ComputerTarget:
         self._computer_id = (
             computer_id if computer_id is not None else self._session_guid
         )
+        self._connection: ComputerTargetConnection | None = None
 
     @property
     def session_guid(self) -> str:
@@ -88,6 +91,51 @@ class ComputerTarget:
     def is_local(self) -> bool:
         """Whether this target computer represents a locally-managed process."""
         return False
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether an open gRPC connection to this target computer exists."""
+        return self._connection is not None
+
+    @property
+    def connection(self) -> ComputerTargetConnection:
+        """
+        The open gRPC connection to this target computer.
+
+        Raises:
+            AskUiControllerError: If this target computer is not connected (i.e.
+                `connect()` has not been called).
+        """
+        if self._connection is None:
+            error_msg = (
+                f"Agent OS target computer {self._description!r} "
+                f"(computer_id={self._computer_id!r}, address={self._address}) "
+                "is not connected. Call `MultiComputerTargetAgentOS.connect()` "
+                "first."
+            )
+            raise AskUiControllerError(error_msg)
+        return self._connection
+
+    def connect(self) -> None:
+        """
+        Open the gRPC connection to this target computer. Idempotent: returns
+        silently if already connected. Delegates the gRPC specifics to
+        `ComputerTargetConnection.open()`.
+        """
+        if self._connection is None:
+            self._connection = ComputerTargetConnection.open(self)
+
+    def disconnect(self) -> None:
+        """
+        Close the gRPC connection to this target computer. No-op if not
+        connected. Delegates the gRPC teardown to
+        `ComputerTargetConnection.close()`.
+        """
+        conn = self._connection
+        if conn is None:
+            return
+        self._connection = None
+        conn.close(self)
 
     def start(self, clean_up: bool = False) -> None:
         """Start the underlying controller process. No-op for non-local targets."""
@@ -176,10 +224,10 @@ class LocalComputerTarget(ComputerTarget):
                 )
                 if result.returncode != 0:
                     return False
-            except (OSError, subprocess.SubprocessError):
+            except (OSError, subprocess.SubprocessError) as e:
                 error_msg = (
                     "Failed to query "
-                    f"{LocalComputerTarget._ASKUI_CORE_SERVICE_NAME} service"
+                    f"{LocalComputerTarget._ASKUI_CORE_SERVICE_NAME} service: {e}"
                 )
                 logger.debug(error_msg)
                 return False
