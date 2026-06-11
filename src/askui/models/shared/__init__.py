@@ -24,8 +24,8 @@ __all__ = [
     "NormalizedCoordinateSpace",
     "PixelCoordinateSpace",
     "ScaledCoordinateSpace",
-    "VlmCoordinateSpace",
     "ToolTags",
+    "VlmCoordinateSpace",
 ]
 
 if _PLAYWRIGHT_AVAILABLE:

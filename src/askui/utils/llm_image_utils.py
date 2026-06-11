@@ -141,6 +141,36 @@ def resize_image(image: Image.Image, target_size: tuple[int, int]) -> Image.Imag
     return image.resize(target_size, Image.Resampling.LANCZOS)
 
 
+def compute_patch_optimized_image(
+    image: Image.Image,
+    max_edge: int = 1568,
+    max_tokens: int = 1568,
+    patch_size: int = 28,
+) -> Image.Image:
+    """Resize an image to its patch-optimized size.
+
+    Convenience wrapper that combines `compute_patch_optimized_size` and
+    `resize_image` into a single call.
+
+    Args:
+        image (Image.Image): Source image.
+        max_edge (int): Maximum allowed dimension (width or height).
+        max_tokens (int): Maximum allowed number of image tokens.
+        patch_size (int): Patch size used by the model.
+
+    Returns:
+        Image.Image: Resized image.
+    """
+    target = compute_patch_optimized_size(
+        image.width,
+        image.height,
+        max_edge=max_edge,
+        max_tokens=max_tokens,
+        patch_size=patch_size,
+    )
+    return resize_image(image, target)
+
+
 def resize_and_pad_image(
     image: Image.Image,
     target_size: tuple[int, int],

@@ -5,7 +5,6 @@ from functools import cached_property
 from typing import Any
 
 from anthropic import Anthropic
-from PIL import Image
 from typing_extensions import override
 
 from askui.model_providers.vlm_provider import VlmProvider
@@ -19,21 +18,10 @@ from askui.models.shared.agent_message_param import (
 from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
-from askui.utils.llm_image_utils import compute_patch_optimized_size, resize_image
+from askui.utils.llm_image_utils import compute_patch_optimized_image
 
 _DEFAULT_MODEL_ID = "claude-sonnet-4-6"
 _DEFAULT_MAX_IMAGE_EDGE = 1568
-
-
-def _askui_image_scaler(image: Image.Image, max_edge: int) -> Image.Image:
-    target = compute_patch_optimized_size(
-        image.width,
-        image.height,
-        max_edge=max_edge,
-        max_tokens=1568,
-        patch_size=28,
-    )
-    return resize_image(image, target)
 
 
 class AskUIVlmProvider(VlmProvider):
@@ -44,14 +32,13 @@ class AskUIVlmProvider(VlmProvider):
     on the first API call, not at construction time.
 
     Args:
-        workspace_id (str | None, optional): AskUI workspace ID. Reads
-            `ASKUI_WORKSPACE_ID` from the environment if not provided.
-        token (str | None, optional): AskUI API token. Reads `ASKUI_TOKEN`
-            from the environment if not provided.
-        model_id (str, optional): Claude model to use. Defaults to
-            `"claude-sonnet-4-6"`.
-        client (Anthropic | None, optional): Pre-configured Anthropic client.
-            If provided, `workspace_id` and `token` are ignored.
+        askui_settings (`AskUiInferenceApiSettings` | None, optional):
+            Connection settings (workspace ID, token, base URL).  Reads
+            from environment variables if not provided.
+        model_id (str | None, optional): Claude model to use. Defaults to
+            ``"claude-sonnet-4-6"``.
+        client (`Anthropic` | None, optional): Pre-configured Anthropic client.
+            If provided, ``askui_settings`` is only used for the base URL.
         image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
             callable. If ``None``, uses Anthropic-optimized patch-based scaling.
         max_image_edge (int | None, optional): Maximum edge length (in pixels)
@@ -65,8 +52,6 @@ class AskUIVlmProvider(VlmProvider):
 
         agent = ComputerAgent(settings=AgentSettings(
             vlm_provider=AskUIVlmProvider(
-                workspace_id="my-workspace",
-                token="my-token",
                 model_id="claude-opus-4-6-20260401",
             )
         ))
@@ -104,7 +89,7 @@ class AskUIVlmProvider(VlmProvider):
         if self._image_scaler_override is not None:
             return self._image_scaler_override
         max_edge = self._max_edge
-        return lambda image: _askui_image_scaler(image, max_edge)
+        return lambda image: compute_patch_optimized_image(image, max_edge=max_edge)
 
     @cached_property
     def _messages_api(self) -> AnthropicMessagesApi:

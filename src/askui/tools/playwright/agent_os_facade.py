@@ -6,8 +6,8 @@ from askui.models.shared.coordinate_space import VlmCoordinateSpace
 from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import Display, ModifierKey, PcKey
+from askui.tools.coordinate_scaling_mixin import CoordinateScaler
 from askui.tools.playwright.agent_os import PlaywrightAgentOs
-from askui.utils.image_utils import scale_coordinates
 
 
 class PlaywrightAgentOsFacade(PlaywrightAgentOs):
@@ -19,9 +19,9 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
     being forwarded to the underlying agent OS.
 
     Args:
-        agent_os (PlaywrightAgentOs): The real Playwright agent OS to wrap.
-        coordinate_space (VlmCoordinateSpace): Coordinate grid the model uses.
-        image_scaler (ImageScaler): Callable to preprocess screenshots.
+        agent_os (`PlaywrightAgentOs`): The real Playwright agent OS to wrap.
+        coordinate_space (`VlmCoordinateSpace`): Coordinate grid the model uses.
+        image_scaler (`ImageScaler`): Callable to preprocess screenshots.
     """
 
     def __init__(
@@ -31,73 +31,30 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
         image_scaler: ImageScaler,
     ) -> None:
         self._agent_os = agent_os
-        self._image_scaler = image_scaler
-        self._target_resolution: tuple[int, int] | None = None
-        self._coordinate_space: VlmCoordinateSpace = coordinate_space
-        self._real_screen_resolution: tuple[int, int] | None = None
+        self._scaler = CoordinateScaler(
+            coordinate_space=coordinate_space,
+            image_scaler=image_scaler,
+            fetch_real_resolution=lambda: self._agent_os.screenshot(report=False).size,
+            take_screenshot=lambda: self.screenshot(report=False),
+        )
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
 
     def connect(self) -> None:
         self._agent_os.connect()
-        self._real_screen_resolution = self._agent_os.screenshot(
-            report=False,
+        self._scaler.real_screen_resolution = self._agent_os.screenshot(
+            report=False
         ).size
 
     def disconnect(self) -> None:
         self._agent_os.disconnect()
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def screenshot(self, report: bool = True) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
-        self._real_screen_resolution = screenshot.size
-        scaled = self._image_scaler(screenshot)
-        self._target_resolution = scaled.size
-        return scaled
-
-    def _ensure_target_resolution(self) -> tuple[int, int]:
-        if self._target_resolution is None:
-            self.screenshot(report=False)
-        assert self._target_resolution is not None  # noqa: S101
-        return self._target_resolution
-
-    def _scale_coordinates(
-        self,
-        x: float,
-        y: float,
-        from_agent: bool = True,
-    ) -> tuple[int, int]:
-        if self._real_screen_resolution is None:
-            self._real_screen_resolution = self._agent_os.screenshot(
-                report=False,
-            ).size
-
-        target_resolution = self._ensure_target_resolution()
-
-        if from_agent:
-            if self._coordinate_space.maps_to_screenshot_pixels:
-                mapped_x, mapped_y = self._coordinate_space.map_to_target(
-                    x, y, target_resolution
-                )
-                return scale_coordinates(
-                    (mapped_x, mapped_y),
-                    self._real_screen_resolution,
-                    target_resolution,
-                    inverse=True,
-                )
-            return self._coordinate_space.map_to_target(
-                x, y, self._real_screen_resolution
-            )
-
-        return scale_coordinates(
-            (int(x), int(y)),
-            self._real_screen_resolution,
-            target_resolution,
-            inverse=False,
-        )
+        return self._scaler.scale_screenshot(screenshot)
 
     def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
-        scaled_x, scaled_y = self._scale_coordinates(x, y)
-        # scaled_x, scaled_y = x, y
+        scaled_x, scaled_y = self._scaler.scale_coordinates(x, y)
         self._agent_os.mouse_move(scaled_x, scaled_y, duration)
 
     def type(self, text: str, typing_speed: int = 50) -> None:

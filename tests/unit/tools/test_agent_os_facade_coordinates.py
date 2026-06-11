@@ -39,10 +39,10 @@ def _make_android_facade(
         coordinate_space=coordinate_space,
         image_scaler=_default_scaler,
     )
-    facade._real_screen_resolution = device_size
+    facade._scaler.real_screen_resolution = device_size
     # Set target resolution as the scaler would produce it
     scaled = _default_scaler(Image.new("RGB", device_size))
-    facade._target_resolution = scaled.size
+    facade._scaler.target_resolution = scaled.size
     return facade
 
 
@@ -58,29 +58,29 @@ class TestScaledCoordinateSpaceTallDevice:
 
     def test_center_tap(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(500, 500)
+        x, y = facade._scaler.scale_coordinates(500, 500)
         assert (x, y) == (540, 1200)
 
     def test_left_side_tap(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(200, 500)
+        x, y = facade._scaler.scale_coordinates(200, 500)
         assert (x, y) == (216, 1200)
 
     def test_swipe_across(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x1, y1 = facade._scale_coordinates(500, 500)
-        x2, y2 = facade._scale_coordinates(200, 500)
+        x1, y1 = facade._scaler.scale_coordinates(500, 500)
+        x2, y2 = facade._scaler.scale_coordinates(200, 500)
         assert (x1, y1) == (540, 1200)
         assert (x2, y2) == (216, 1200)
 
     def test_origin(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(0, 0)
+        x, y = facade._scaler.scale_coordinates(0, 0)
         assert (x, y) == (0, 0)
 
     def test_max_corner(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(1000, 1000)
+        x, y = facade._scaler.scale_coordinates(1000, 1000)
         assert (x, y) == (1080, 2400)
 
 
@@ -92,12 +92,12 @@ class TestNormalizedCoordinateSpaceTallDevice:
 
     def test_center_tap(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(0.5, 0.5)
+        x, y = facade._scaler.scale_coordinates(0.5, 0.5)
         assert (x, y) == (540, 1200)
 
     def test_left_side_tap(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(0.2, 0.5)
+        x, y = facade._scaler.scale_coordinates(0.2, 0.5)
         assert (x, y) == (216, 1200)
 
 
@@ -119,7 +119,7 @@ class TestPixelCoordinateSpaceTallDevice:
         """The center of the content area in the scaled screenshot."""
         facade = _make_android_facade(self.device, self.cs)
         # Target resolution is (345, 768) — nearly no padding
-        x, y = facade._scale_coordinates(172, 384)
+        x, y = facade._scaler.scale_coordinates(172, 384)
         assert x == pytest.approx(538, abs=5)
         assert y == pytest.approx(1200, abs=5)
 
@@ -128,7 +128,7 @@ class TestPixelCoordinateSpaceTallDevice:
         facade = _make_android_facade(self.device, self.cs)
         # Use (1, 2) instead of exact origin to avoid rounding-offset
         # edge case that can produce small negative values.
-        x, y = facade._scale_coordinates(1, 2)
+        x, y = facade._scaler.scale_coordinates(1, 2)
         assert x == pytest.approx(3, abs=5)
         assert y == pytest.approx(3, abs=5)
 
@@ -141,7 +141,7 @@ class TestSquareDevice:
 
     def test_center(self) -> None:
         facade = _make_android_facade(self.device, self.cs)
-        x, y = facade._scale_coordinates(500, 500)
+        x, y = facade._scaler.scale_coordinates(500, 500)
         assert (x, y) == (512, 384)
 
 
@@ -152,7 +152,7 @@ class TestFromAgentFalse:
         facade = _make_android_facade(
             (1080, 2400), ScaledCoordinateSpace(width=1000, height=1000)
         )
-        x, y = facade._scale_coordinates(540, 1200, from_agent=False)
+        x, y = facade._scaler.scale_coordinates(540, 1200, from_agent=False)
         # Target resolution is (345, 768), no padding
         # Forward scaling: factor = 768/2400 = 0.32
         # x = 540 * 0.32 = 172.8 → 172, y = 1200 * 0.32 = 384
