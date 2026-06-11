@@ -5,7 +5,6 @@ from typing_extensions import override
 
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
 from askui.models.shared.coordinate_space import (
-    NormalizedCoordinateSpace,
     PixelCoordinateSpace,
     ScaledCoordinateSpace,
     VlmCoordinateSpace,
@@ -17,7 +16,7 @@ _DEFAULT_MODEL_ID = "qwen3.5"
 
 _QWEN_COORDINATE_SPACE = ScaledCoordinateSpace(width=1000, height=1000)
 _HOLO_COORDINATE_SPACE = ScaledCoordinateSpace(width=1000, height=1000)
-_KIMI_COORDINATE_SPACE = NormalizedCoordinateSpace()
+_KIMI_COORDINATE_SPACE = ScaledCoordinateSpace(width=1000, height=1000)
 
 
 class OllamaVlmProvider(OpenAIVlmProvider):

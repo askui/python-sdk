@@ -26,7 +26,7 @@ from askui.utils.model_pricing import ModelPricing
 
 _DEFAULT_MODEL_ID = "gpt-5.4"
 _DEFAULT_COORDINATE_SPACE = PixelCoordinateSpace()
-_DEFAULT_MAX_IMAGE_EDGE = 2048
+_DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
 class OpenAIVlmProvider(VlmProvider):

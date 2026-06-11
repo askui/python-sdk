@@ -21,7 +21,7 @@ from askui.models.shared.tools import ToolCollection
 from askui.utils.llm_image_utils import compute_patch_optimized_image
 
 _DEFAULT_MODEL_ID = "claude-sonnet-4-6"
-_DEFAULT_MAX_IMAGE_EDGE = 1568
+_DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
 class AskUIVlmProvider(VlmProvider):
