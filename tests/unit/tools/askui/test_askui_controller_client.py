@@ -46,9 +46,9 @@ def _make_remote(
 class TestConstruction:
     def test_default_registers_single_local_target(self) -> None:
         client = MultiComputerTargetAgentOS()
-        agent_os_target_computers = client.agent_os_target_computer_manager.list()
-        assert len(agent_os_target_computers) == 1
-        assert isinstance(agent_os_target_computers[0], LocalComputerTarget)
+        manager = client.agent_os_target_computer_manager
+        assert len(manager) == 1
+        assert isinstance(manager.active, LocalComputerTarget)
 
     def test_default_propagates_display_to_default_local_target(self) -> None:
         client = MultiComputerTargetAgentOS(display=3)
@@ -60,7 +60,10 @@ class TestConstruction:
         a = _make_local(computer_id="local")
         b = _make_remote(computer_id="remote")
         client = MultiComputerTargetAgentOS(agent_os_target_computers=[a, b])
-        assert client.agent_os_target_computer_manager.list() == [a, b]
+        assert client.agent_os_target_computer_manager.describe() == [
+            repr(a),
+            repr(b),
+        ]
         assert client.agent_os_target_computer_manager.active is a
 
     def test_explicit_targets_keep_their_own_display(self) -> None:
@@ -128,19 +131,19 @@ class TestSwitchAgentOsTargetComputer:
         assert active_a.display == 1
 
 
-class TestListAndReset:
-    def test_list_returns_registered_targets(self) -> None:
+class TestDescribeAndReset:
+    def test_describe_returns_registered_target_summaries(self) -> None:
         a = _make_local(computer_id="a")
         b = _make_remote(computer_id="b")
         client = MultiComputerTargetAgentOS(agent_os_target_computers=[a, b])
-        assert client.list_agent_os_target_computers() == [a, b]
+        assert client.describe_agent_os_target_computers() == [repr(a), repr(b)]
 
     def test_reset_with_no_args_leaves_manager_empty(self) -> None:
         client = MultiComputerTargetAgentOS(
             agent_os_target_computers=[_make_remote(computer_id="r")]
         )
         client.reset_agent_os_target_computers()
-        assert client.list_agent_os_target_computers() == []
+        assert client.describe_agent_os_target_computers() == []
 
     def test_reset_with_new_list_replaces_registrations(self) -> None:
         client = MultiComputerTargetAgentOS(
@@ -150,7 +153,9 @@ class TestListAndReset:
             address="9.9.9.9:23000", computer_id="new"
         )
         client.reset_agent_os_target_computers([new_agent_os_target_computer])
-        assert client.list_agent_os_target_computers() == [new_agent_os_target_computer]
+        assert client.describe_agent_os_target_computers() == [
+            repr(new_agent_os_target_computer)
+        ]
         assert (
             client.agent_os_target_computer_manager.active
             is new_agent_os_target_computer
@@ -165,7 +170,7 @@ class TestAddAgentOsTargetComputerWhileDisconnected:
         extra = _make_remote(address="2.2.2.2:23000", computer_id="r")
         result = client.add_agent_os_target_computer(extra)
         assert result is extra
-        assert extra in client.list_agent_os_target_computers()
+        assert repr(extra) in client.describe_agent_os_target_computers()
 
 
 class TestTemporarySelect:

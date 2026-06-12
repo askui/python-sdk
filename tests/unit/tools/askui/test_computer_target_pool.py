@@ -50,7 +50,7 @@ def make_target(
 class TestConstruction:
     def test_empty_constructor_yields_empty_manager(self) -> None:
         m = ComputerTargetPool()
-        assert m.list() == []
+        assert m.describe() == []
         assert m.active is None
         assert len(m) == 0
 
@@ -58,7 +58,7 @@ class TestConstruction:
         a = _make_remote(address="1.1.1.1:23000", computer_id="a")
         b = _make_remote(address="2.2.2.2:23000", computer_id="b")
         m = ComputerTargetPool(agent_os_target_computers=[a, b])
-        assert m.list() == [a, b]
+        assert m.describe() == [repr(a), repr(b)]
         # First registered becomes active.
         assert m.active is a
 
@@ -153,7 +153,7 @@ class TestRemove:
         m.add(a)
         m.add(b)
         m.remove("a")
-        assert m.list() == [b]
+        assert m.describe() == [repr(b)]
 
     def test_remove_active_falls_back_to_first_remaining(self) -> None:
         m = ComputerTargetPool()
@@ -198,6 +198,6 @@ class TestReset:
         m.add(_make_remote(computer_id="a"))
         m.add(_make_remote(address="2.2.2.2:23000", computer_id="b"))
         m.reset()
-        assert m.list() == []
+        assert m.describe() == []
         assert m.active is None
         assert len(m) == 0

@@ -15,5 +15,5 @@ class ComputerListAgentOsTargetComputersTool(ComputerBaseTool):
         )
 
     def __call__(self) -> str:
-        target_computers = self.agent_os.list_agent_os_target_computers()
-        return ",".join(repr(t) for t in target_computers)
+        target_computer_reprs = self.agent_os.describe_agent_os_target_computers()
+        return "\n".join(target_computer_reprs)

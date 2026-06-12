@@ -22,22 +22,23 @@ class TestComputerListAgentOsTargetComputersTool:
         tool = ComputerListAgentOsTargetComputersTool(agent_os=fake_agent_os)
         assert tool.base_name == "list_agent_os_target_computers"
 
-    def test_returns_comma_separated_repr_of_targets(
-        self, fake_agent_os: MagicMock
-    ) -> None:
+    def test_returns_newline_joined_reprs(self, fake_agent_os: MagicMock) -> None:
         a = RemoteComputerTarget(
             address="1.1.1.1:23000", description="a", computer_id="a"
         )
         b = RemoteComputerTarget(
             address="2.2.2.2:23000", description="b", computer_id="b"
         )
-        fake_agent_os.list_agent_os_target_computers.return_value = [a, b]
+        fake_agent_os.describe_agent_os_target_computers.return_value = [
+            repr(a),
+            repr(b),
+        ]
         tool = ComputerListAgentOsTargetComputersTool(agent_os=fake_agent_os)
         out = tool()
-        assert out == f"{a!r},{b!r}"
+        assert out == f"{a!r}\n{b!r}"
 
     def test_empty_list_yields_empty_string(self, fake_agent_os: MagicMock) -> None:
-        fake_agent_os.list_agent_os_target_computers.return_value = []
+        fake_agent_os.describe_agent_os_target_computers.return_value = []
         tool = ComputerListAgentOsTargetComputersTool(agent_os=fake_agent_os)
         assert tool() == ""
 

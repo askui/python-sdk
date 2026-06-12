@@ -22,7 +22,7 @@ class ComputerTargetPool:
           connection needed to route agent-os actions to it.
 
     The first target added becomes active by default. Use `switch` to change
-    which target is active. `connect_all` opens connections to every registered
+    which target is active. `connect` opens connections to every registered
     target; subsequently `add` / `switch` auto-connect any
     newly-introduced target whenever the manager already holds at least one
     open connection.
@@ -74,12 +74,12 @@ class ComputerTargetPool:
         if self._active_computer_id is None:
             self._active_computer_id = target.computer_id
         if self.is_connected:
-            self.connect(target)
+            self.connect_target(target)
         return target
 
     def reset(self) -> None:
         """Disconnect every open connection and remove all registered targets."""
-        self.disconnect_all()
+        self.disconnect()
         self._by_computer_id.clear()
         self._active_computer_id = None
 
@@ -95,14 +95,16 @@ class ComputerTargetPool:
             KeyError: If no target with the given computer id is registered.
         """
         self._require(computer_id)
-        self.disconnect(computer_id)
+        self.disconnect_target(computer_id)
         del self._by_computer_id[computer_id]
         if self._active_computer_id == computer_id:
             self._active_computer_id = next(iter(self._by_computer_id), None)
 
-    def list(self) -> list[ComputerTarget]:
-        """Return all registered targets in registration order."""
-        return list(self._by_computer_id.values())
+    def describe(self) -> list[str]:
+        """
+        Return the `repr()` of every registered target, in registration order.
+        """
+        return [repr(target) for target in self._by_computer_id.values()]
 
     def get(self, computer_id: str) -> ComputerTarget:
         """
@@ -131,7 +133,7 @@ class ComputerTargetPool:
         target = self._require(computer_id)
         self._active_computer_id = computer_id
         if self.is_connected and not target.is_connected:
-            self.connect(target)
+            self.connect_target(target)
         return target
 
     @property
@@ -165,22 +167,22 @@ class ComputerTargetPool:
 
         Raises:
             AskUiControllerError: If no target is currently active or the active
-                target has no open connection (i.e. `connect_all()` has not been
+                target has no open connection (i.e. `connect()` has not been
                 called).
         """
         return self.require_active().connection
 
-    def connect_all(self) -> None:
+    def connect(self) -> None:
         """
         Open the connection to every registered Agent OS target via
         `ComputerTarget.connect()`. Targets already connected are skipped, so
-        calling `connect_all()` twice is safe.
+        calling `connect()` twice is safe.
 
         Raises:
             AskUiControllerError: If no targets are registered.
 
         On failure mid-loop, all targets connected so far are rolled back via
-        `disconnect_all()` before re-raising.
+        `disconnect()` before re-raising.
         """
         if not self._by_computer_id:
             error_msg = (
@@ -192,12 +194,12 @@ class ComputerTargetPool:
             raise AskUiControllerError(error_msg)
         try:
             for target in self._by_computer_id.values():
-                self.connect(target)
+                self.connect_target(target)
         except Exception:
-            self.disconnect_all()
+            self.disconnect()
             raise
 
-    def connect(self, target: ComputerTarget) -> None:
+    def connect_target(self, target: ComputerTarget) -> None:
         """
         Open the connection to a single registered Agent OS target. Idempotent:
         returns silently if the target is already connected. Delegates to
@@ -205,7 +207,7 @@ class ComputerTargetPool:
         """
         target.connect()
 
-    def disconnect_all(self) -> None:
+    def disconnect(self) -> None:
         """
         Close every open Agent OS target connection. Errors on one connection
         are logged but do not abort the loop - a partial failure still releases
@@ -214,7 +216,7 @@ class ComputerTargetPool:
         for target in self._by_computer_id.values():
             target.disconnect()
 
-    def disconnect(self, computer_id: str) -> None:
+    def disconnect_target(self, computer_id: str) -> None:
         """
         Close a single open Agent OS target connection identified by its
         `computer_id`. No-op if no such connection is open or no such target is
@@ -270,7 +272,8 @@ class ComputerTargetPool:
         error_msg = (
             f"No Agent OS target computer with computer_id={computer_id!r} is "
             f"registered. Registered computer ids: {registered}. Use "
-            "`list_agent_os_target_computers()` to inspect the registered targets."
+            "`describe_agent_os_target_computers()` to inspect the registered "
+            "targets."
         )
         raise KeyError(error_msg)
 

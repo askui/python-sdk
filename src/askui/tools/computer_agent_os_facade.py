@@ -283,8 +283,8 @@ class ComputerAgentOsFacade(ComputerAgentOS):
     ) -> None:
         self._agent_os.reset_agent_os_target_computers(agent_os_target_computers)
 
-    def list_agent_os_target_computers(self) -> "list[ComputerTarget]":
-        return self._agent_os.list_agent_os_target_computers()
+    def describe_agent_os_target_computers(self) -> list[str]:
+        return self._agent_os.describe_agent_os_target_computers()
 
     def get_current_computer_target_id(self, report: bool = True) -> str:
         return self._agent_os.get_current_computer_target_id(report=report)

@@ -101,7 +101,7 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
     Use `add_agent_os_target_computer` to register additional targets (which
     auto-connect if the client is currently connected),
     `switch_agent_os_target_computer` to change the active one,
-    `list_agent_os_target_computers` to inspect the list, and
+    `describe_agent_os_target_computers` to inspect the registered targets, and
     `reset_agent_os_target_computers` to clear or replace the list.
 
     Args:
@@ -200,17 +200,18 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
     @telemetry.record_call()
     @override
-    def list_agent_os_target_computers(self) -> list[ComputerTarget]:
-        """Return all registered target computers."""
+    def describe_agent_os_target_computers(self) -> list[str]:
+        """Return the `repr()` string of every registered target computer."""
         self._reporter.add_message(
-            self._REPORTER_SOURCE, "list_agent_os_target_computers()"
+            self._REPORTER_SOURCE, "describe_agent_os_target_computers()"
         )
-        agent_os_target_computers = self._manager.list()
+        agent_os_target_computer_reprs = self._manager.describe()
         self._reporter.add_message(
             self._REPORTER_SOURCE,
-            f"list_agent_os_target_computers() -> {agent_os_target_computers!r}",
+            "describe_agent_os_target_computers() -> "
+            f"{agent_os_target_computer_reprs!r}",
         )
-        return agent_os_target_computers
+        return agent_os_target_computer_reprs
 
     @telemetry.record_call()
     @override
@@ -285,7 +286,7 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         Open a gRPC channel and session to every registered target computer via
         the underlying `ComputerTargetPool`.
         """
-        self._manager.connect_all()
+        self._manager.connect()
 
     def _get_stub(self) -> controller_v1.ControllerAPIStub:
         return self._manager.active_connection().stub
@@ -345,7 +346,7 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         Close every open target-computer connection via the underlying
         `ComputerTargetPool`.
         """
-        self._manager.disconnect_all()
+        self._manager.disconnect()
 
     @telemetry.record_call()
     def __enter__(self) -> Self:

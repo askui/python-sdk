@@ -695,8 +695,8 @@ class ComputerAgentOS(ABC):
         """Disconnect (if connected) and replace the target computer list."""
         raise NotImplementedError
 
-    def list_agent_os_target_computers(self) -> "list[ComputerTarget]":
-        """Return all registered target computers."""
+    def describe_agent_os_target_computers(self) -> list[str]:
+        """Return the `repr()` string of every registered target computer."""
         raise NotImplementedError
 
     def get_current_computer_target_id(self, report: bool = True) -> str:
