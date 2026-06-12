@@ -1,6 +1,9 @@
+from collections.abc import Callable
+
 import pytest
 
 from askui.tools.askui.agent_os_target_computer import (
+    ComputerTarget,
     LocalComputerTarget,
     RemoteComputerTarget,
 )
@@ -23,6 +26,27 @@ def _make_local(computer_id: str | None = None) -> LocalComputerTarget:
     return LocalComputerTarget(discover_service=False, computer_id=computer_id)
 
 
+@pytest.fixture(params=["local", "remote"])
+def make_target(
+    request: pytest.FixtureRequest,
+) -> Callable[..., ComputerTarget]:
+    """Build a single target of the parametrized kind so a test runs once per kind.
+
+    Use for tests that register exactly one target and where the local/remote
+    distinction is irrelevant to the behavior under test.
+    """
+
+    def _make(
+        computer_id: str | None = None,
+        address: str = "1.2.3.4:23000",
+    ) -> ComputerTarget:
+        if request.param == "local":
+            return _make_local(computer_id=computer_id)
+        return _make_remote(address=address, computer_id=computer_id)
+
+    return _make
+
+
 class TestConstruction:
     def test_empty_constructor_yields_empty_manager(self) -> None:
         m = ComputerTargetPool()
@@ -38,9 +62,11 @@ class TestConstruction:
         # First registered becomes active.
         assert m.active is a
 
-    def test_first_added_becomes_active(self) -> None:
+    def test_first_added_becomes_active(
+        self, make_target: Callable[..., ComputerTarget]
+    ) -> None:
         m = ComputerTargetPool()
-        a = _make_remote(computer_id="a")
+        a = make_target(computer_id="a")
         m.add(a)
         assert m.active is a
 
@@ -80,28 +106,20 @@ class TestAddConstraints:
         assert len(m) == 2
 
 
-class TestAddRemote:
-    def test_constructs_and_registers(self) -> None:
-        m = ComputerTargetPool()
-        agent_os_target_computer = m.add_remote(
-            address="1.2.3.4:23000", description="r"
-        )
-        assert isinstance(agent_os_target_computer, RemoteComputerTarget)
-        assert agent_os_target_computer.address == "1.2.3.4:23000"
-        assert agent_os_target_computer.description == "r"
-        assert m.list() == [agent_os_target_computer]
-
-
 class TestGetAndSwitch:
-    def test_get_returns_target_by_computer_id(self) -> None:
+    def test_get_returns_target_by_computer_id(
+        self, make_target: Callable[..., ComputerTarget]
+    ) -> None:
         m = ComputerTargetPool()
-        a = _make_remote(address="1.1.1.1:23000", computer_id="a")
+        a = make_target(address="1.1.1.1:23000", computer_id="a")
         m.add(a)
         assert m.get("a") is a
 
-    def test_get_raises_keyerror_with_registered_ids(self) -> None:
+    def test_get_raises_keyerror_with_registered_ids(
+        self, make_target: Callable[..., ComputerTarget]
+    ) -> None:
         m = ComputerTargetPool()
-        m.add(_make_remote(address="1.1.1.1:23000", computer_id="a"))
+        m.add(make_target(address="1.1.1.1:23000", computer_id="a"))
         with pytest.raises(KeyError) as exc_info:
             m.get("missing")
         message = str(exc_info.value)
@@ -118,9 +136,11 @@ class TestGetAndSwitch:
         m.switch("b")
         assert m.active is b
 
-    def test_switch_unknown_id_raises_keyerror(self) -> None:
+    def test_switch_unknown_id_raises_keyerror(
+        self, make_target: Callable[..., ComputerTarget]
+    ) -> None:
         m = ComputerTargetPool()
-        m.add(_make_remote(computer_id="a"))
+        m.add(make_target(computer_id="a"))
         with pytest.raises(KeyError, match="missing"):
             m.switch("missing")
 
@@ -145,9 +165,11 @@ class TestRemove:
         m.remove("a")
         assert m.active is b
 
-    def test_remove_last_clears_active(self) -> None:
+    def test_remove_last_clears_active(
+        self, make_target: Callable[..., ComputerTarget]
+    ) -> None:
         m = ComputerTargetPool()
-        m.add(_make_remote(computer_id="a"))
+        m.add(make_target(computer_id="a"))
         m.remove("a")
         assert m.active is None
         assert len(m) == 0
@@ -161,9 +183,11 @@ class TestRemove:
         m.remove("b")
         assert m.active is a
 
-    def test_remove_unknown_raises_keyerror(self) -> None:
+    def test_remove_unknown_raises_keyerror(
+        self, make_target: Callable[..., ComputerTarget]
+    ) -> None:
         m = ComputerTargetPool()
-        m.add(_make_remote(computer_id="a"))
+        m.add(make_target(computer_id="a"))
         with pytest.raises(KeyError):
             m.remove("missing")
 

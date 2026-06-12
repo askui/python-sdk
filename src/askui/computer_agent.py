@@ -125,20 +125,6 @@ class ComputerAgent(Agent):
             )
         ```
 
-    Example:
-        Register a remote machine at runtime:
-
-        ```python
-        from askui import ComputerAgent
-
-        with ComputerAgent() as agent:
-            agent.tools.os.add_remote_agent_os_target_computer(
-                address="10.0.0.5:26000",
-                description="Build server",
-            )
-            agent.act("Kick off a release build on the build server")
-        ```
-
     Example (optional tools for `act()`):
         Register tools from `askui.tools.store` (or your own `Tool` implementations)
         either on the agent so they apply to all `act()` calls, or only for one call.

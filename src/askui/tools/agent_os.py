@@ -11,7 +11,6 @@ from askui.models.shared.tool_tags import ToolTags
 if TYPE_CHECKING:
     from askui.tools.askui.agent_os_target_computer import (
         ComputerTarget,
-        RemoteComputerTarget,
     )
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
         Controller_V1_pb2 as controller_v1_pbs,
@@ -687,14 +686,6 @@ class ComputerAgentOS(ABC):
         self, agent_os_target_computer: "ComputerTarget"
     ) -> "ComputerTarget":
         """Register an additional target computer. Auto-connects if connected."""
-        raise NotImplementedError
-
-    def add_remote_agent_os_target_computer(
-        self,
-        address: str,
-        description: str,
-    ) -> "RemoteComputerTarget":
-        """Register an additional remote target computer."""
         raise NotImplementedError
 
     def reset_agent_os_target_computers(

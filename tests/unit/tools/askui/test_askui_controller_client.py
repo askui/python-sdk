@@ -158,16 +158,6 @@ class TestListAndReset:
 
 
 class TestAddAgentOsTargetComputerWhileDisconnected:
-    def test_add_remote_appends_without_connecting(self) -> None:
-        client = MultiComputerTargetAgentOS(
-            agent_os_target_computers=[_make_local(computer_id="l")]
-        )
-        added = client.add_remote_agent_os_target_computer(
-            address="2.2.2.2:23000", description="r"
-        )
-        assert added in client.list_agent_os_target_computers()
-        assert client.is_connected is False
-
     def test_add_already_constructed_target(self) -> None:
         client = MultiComputerTargetAgentOS(
             agent_os_target_computers=[_make_local(computer_id="l")]

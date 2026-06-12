@@ -23,7 +23,6 @@ from askui.tools.agent_os import (
 from askui.tools.askui.agent_os_target_computer import (
     ComputerTarget,
     LocalComputerTarget,
-    RemoteComputerTarget,
 )
 from askui.tools.askui.askui_ui_controller_grpc.desktop_agent_os_error import (
     DesktopAgentOsError,
@@ -99,9 +98,9 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
     processes that were started by this client (i.e. `is_local` and not
     `is_service` at connect time).
 
-    Use `add_agent_os_target_computer` / `add_remote_agent_os_target_computer` to
-    register additional targets (which auto-connect if the client is currently
-    connected), `switch_agent_os_target_computer` to change the active one,
+    Use `add_agent_os_target_computer` to register additional targets (which
+    auto-connect if the client is currently connected),
+    `switch_agent_os_target_computer` to change the active one,
     `list_agent_os_target_computers` to inspect the list, and
     `reset_agent_os_target_computers` to clear or replace the list.
 
@@ -151,40 +150,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
     @property
     def _session_info(self) -> controller_v1_pbs.SessionInfo:
         return self._manager.active_connection().session_info
-
-    @telemetry.record_call()
-    @override
-    def add_remote_agent_os_target_computer(
-        self,
-        address: str,
-        description: str,
-    ) -> RemoteComputerTarget:
-        """
-        Register a remote target computer. Auto-connects if the client is
-        currently connected.
-
-        Args:
-            address (str): gRPC address of the remote controller (required).
-            description (str): Human-readable description.
-
-        Returns:
-            RemoteComputerTarget: The newly registered target computer.
-        """
-        self._reporter.add_message(
-            self._REPORTER_SOURCE,
-            (
-                f"add_remote_agent_os_target_computer({address!r}, "
-                f"description={description!r})"
-            ),
-        )
-        agent_os_target_computer = self._manager.add_remote(
-            address=address, description=description
-        )
-        self._reporter.add_message(
-            self._REPORTER_SOURCE,
-            f"add_remote_agent_os_target_computer(...) -> {agent_os_target_computer!r}",
-        )
-        return agent_os_target_computer
 
     @telemetry.record_call(exclude={"agent_os_target_computer"})
     @override

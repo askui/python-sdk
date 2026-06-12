@@ -23,7 +23,6 @@ from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
 if TYPE_CHECKING:
     from askui.tools.askui.agent_os_target_computer import (
         ComputerTarget,
-        RemoteComputerTarget,
     )
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
         Controller_V1_pb2 as controller_v1_pbs,
@@ -277,15 +276,6 @@ class ComputerAgentOsFacade(ComputerAgentOS):
         self, agent_os_target_computer: "ComputerTarget"
     ) -> "ComputerTarget":
         return self._agent_os.add_agent_os_target_computer(agent_os_target_computer)
-
-    def add_remote_agent_os_target_computer(
-        self,
-        address: str,
-        description: str,
-    ) -> "RemoteComputerTarget":
-        return self._agent_os.add_remote_agent_os_target_computer(
-            address=address, description=description
-        )
 
     def reset_agent_os_target_computers(
         self,

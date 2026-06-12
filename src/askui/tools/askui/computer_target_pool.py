@@ -1,6 +1,5 @@
 from askui.tools.askui.agent_os_target_computer import (
     ComputerTarget,
-    RemoteComputerTarget,
 )
 from askui.tools.askui.computer_target_connection import ComputerTargetConnection
 from askui.tools.askui.exceptions import AskUiControllerError
@@ -24,7 +23,7 @@ class ComputerTargetPool:
 
     The first target added becomes active by default. Use `switch` to change
     which target is active. `connect_all` opens connections to every registered
-    target; subsequently `add` / `add_remote` / `switch` auto-connect any
+    target; subsequently `add` / `switch` auto-connect any
     newly-introduced target whenever the manager already holds at least one
     open connection.
 
@@ -76,27 +75,6 @@ class ComputerTargetPool:
             self._active_computer_id = target.computer_id
         if self.is_connected:
             self.connect(target)
-        return target
-
-    def add_remote(
-        self,
-        address: str,
-        description: str,
-    ) -> RemoteComputerTarget:
-        """
-        Convenience method to construct and register a remote Agent OS target
-        computer. Auto-connects when the manager already has at least one open
-        connection.
-
-        Args:
-            address (str): gRPC address of the remote Agent OS target computer.
-            description (str): Human-readable description.
-
-        Returns:
-            RemoteComputerTarget: The newly registered target.
-        """
-        target = RemoteComputerTarget(address=address, description=description)
-        self.add(target)
         return target
 
     def reset(self) -> None:
@@ -174,10 +152,9 @@ class ComputerTargetPool:
         if target is None:
             error_msg = (
                 "No active Agent OS target computer. Register one via "
-                "`MultiComputerTargetAgentOS.add_agent_os_target_computer()` / "
-                "`add_remote_agent_os_target_computer()`, or pass "
-                "`agent_os_target_computers` to the `MultiComputerTargetAgentOS` "
-                "constructor."
+                "`MultiComputerTargetAgentOS.add_agent_os_target_computer()`, or "
+                "pass `agent_os_target_computers` to the "
+                "`MultiComputerTargetAgentOS` constructor."
             )
             raise AskUiControllerError(error_msg)
         return target
@@ -210,8 +187,7 @@ class ComputerTargetPool:
                 "Cannot connect: no Agent OS target computers registered. Provide "
                 "at least one via the `MultiComputerTargetAgentOS` constructor's "
                 "`agent_os_target_computers` argument, or call "
-                "`add_agent_os_target_computer()` / "
-                "`add_remote_agent_os_target_computer()` before `connect()`."
+                "`add_agent_os_target_computer()` before `connect()`."
             )
             raise AskUiControllerError(error_msg)
         try:
