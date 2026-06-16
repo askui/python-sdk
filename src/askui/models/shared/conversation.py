@@ -10,6 +10,7 @@ from askui.model_providers.detection_provider import DetectionProvider
 from askui.model_providers.image_qa_provider import ImageQAProvider
 from askui.model_providers.vlm_provider import VlmProvider
 from askui.models.shared.agent_message_param import MessageParam
+from askui.models.shared.secrets import SecretVault
 from askui.models.shared.settings import ActSettings
 from askui.models.shared.tools import ToolCollection
 from askui.models.shared.truncation_strategies import (
@@ -90,6 +91,11 @@ class Conversation:
         self._reporter = reporter
         self.cache_manager = cache_manager
         self._callbacks: "list[ConversationCallback]" = callbacks or []
+
+        # Secret vault — substitutes placeholders in tool inputs and redacts literal
+        # secret values from anything added to history/reporter. Assigned per act()
+        # call by the Agent; defaults to an empty (no-op) vault.
+        self.secret_vault: SecretVault = SecretVault()
 
         # State for current execution (set in start())
         self.settings: ActSettings = ActSettings()
@@ -196,13 +202,18 @@ class Conversation:
         self._executed_from_cache = False
         self.speakers.reset_state()
 
-        # Store execution parameters
-        self.settings = settings or ActSettings()
+        # Store execution parameters. Deep-copy settings so per-call mutations
+        # (speaker handoff + secret sections appended to the system prompt) do not
+        # accumulate on the Agent's persistent, reused settings object across calls.
+        self.settings = (settings or ActSettings()).model_copy(deep=True)
         self.tools = tools or ToolCollection()
+        self.tools.secret_vault = self.secret_vault
         self._reporters = reporters or []
 
         # Auto-populate speaker descriptions and switch_speaker tool
         self._setup_speaker_handoff()
+        # Advertise available secret placeholders to the model
+        self._setup_secrets()
 
     @tracer.start_as_current_span("_execute_control_loop")
     def _execute_control_loop(self) -> None:
@@ -260,6 +271,24 @@ class Conversation:
         handoff_speakers = [speaker.name for speaker in self.speakers]
         switch_tool = SwitchSpeakerTool(speaker_names=handoff_speakers)
         self.tools.append_tool(switch_tool)
+
+    def _setup_secrets(self) -> None:
+        """Advertise available secret placeholders to the model.
+
+        Appends an ``<AVAILABLE_SECRETS>`` section to ``system_capabilities`` so the
+        model knows which ``<|secret|>NAME<|secret|>`` placeholders it may use. No-op
+        when no
+        secrets are registered or no system prompt is set. Mirrors
+        ``_setup_speaker_handoff``'s ``<AVAILABLE_SPEAKERS>`` injection.
+        """
+        if not self.secret_vault:
+            return
+        section = self.secret_vault.system_prompt_section()
+        if not section or self.settings.messages.system is None:
+            return
+        has_capabilities = self.settings.messages.system.system_capabilities
+        separator = "\n\n" if has_capabilities else ""
+        self.settings.messages.system.system_capabilities += f"{separator}{section}"
 
     def _build_speaker_descriptions(self) -> str:
         """Build formatted speaker descriptions for the system prompt.
@@ -368,9 +397,17 @@ class Conversation:
     def _add_message(self, message: MessageParam) -> None:
         """Add message to conversation history.
 
+        Redacts literal secret values from the message before it reaches the reporter,
+        truncation strategy (LLM history) or cache recording. This is the single point
+        every speaker-produced message and tool result flows through.
+
         Args:
             message: Message to add
         """
+        # Defense-in-depth: scrub any literal secret value that slipped into content
+        # (e.g. a tool echoing typed text) before it leaves the trusted boundary.
+        message = self.secret_vault.redact_message(message)
+
         # Report to reporter
         self._reporter.add_message(
             self.current_speaker.name, message.model_dump(mode="json")

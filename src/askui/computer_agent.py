@@ -10,6 +10,7 @@ from askui.callbacks import ConversationCallback
 from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.models import Point
+from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import ActSettings, LocateSettings, MessageSettings
 from askui.models.shared.tools import Tool
 from askui.models.shared.truncation_strategies import TruncationStrategy
@@ -59,6 +60,13 @@ class ComputerAgent(Agent):
         act_tools (list[Tool] | None, optional): Additional tools to make available for
             the `act()` method for every call. Same tools can instead be passed per call
             via `act(..., tools=[...])` (see example below).
+        secrets (list[Secret] | None, optional): Sensitive values (e.g. passwords) the
+            agent may use but the LLM must never see. The model only sees the placeholder
+            `<|secret|>NAME<|secret|>`; the real value is substituted at execution time and is
+            kept out of the LLM prompt, reporter, logs and cache. Also usable in
+            deterministic `type()` and overridable per call via `act(..., secrets=[...])`.
+            Note: a secret typed into a visible field may still appear in screenshots sent
+            to the model; on-screen secrets cannot currently be hidden.
 
     Example:
         ```python
@@ -99,6 +107,7 @@ class ComputerAgent(Agent):
             "act_tools",
             "callbacks",
             "truncation_strategy",
+            "secrets",
         }
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
@@ -112,6 +121,7 @@ class ComputerAgent(Agent):
         act_tools: list[Tool] | None = None,
         callbacks: list[ConversationCallback] | None = None,
         truncation_strategy: TruncationStrategy | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.tools = tools or AgentToolbox(
@@ -128,6 +138,7 @@ class ComputerAgent(Agent):
             settings=settings,
             callbacks=callbacks,
             truncation_strategy=truncation_strategy,
+            secrets=secrets,
         )
         self.act_agent_os_facade: ComputerAgentOsFacade = ComputerAgentOsFacade(
             self.tools.os
@@ -320,7 +331,9 @@ class ComputerAgent(Agent):
                 agent.type("text", locator="Input field", offset=(5, 0))  # Click 5 pixels right of "Input field", then type
             ```
         """
-        msg = f'type "{text}"'
+        # Reporter/logs see the placeholder; the OS receives the resolved value.
+        redacted_text = self._redact_secrets(text)
+        msg = f'type "{redacted_text}"'
         if locator is not None:
             msg += f" into {locator}"
             if clear:
@@ -337,7 +350,7 @@ class ComputerAgent(Agent):
             )
         logger.debug("Agent received instruction to %s", msg)
         self._reporter.add_message("User", msg)
-        self.tools.os.type(text)
+        self.tools.os.type(self._resolve_secrets(text))
 
     @telemetry.record_call()
     @validate_call

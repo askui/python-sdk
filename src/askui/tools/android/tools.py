@@ -118,6 +118,9 @@ class AndroidTypeTool(AndroidBaseTool):
                 """
                 Types the given text on the Android device screen.
                 The to typed text can not contains non ASCII printable characters.
+                To enter a secret/sensitive value, pass its placeholder
+                `<|secret|>NAME<|secret|>` as the text; the real value is substituted
+                securely at runtime and is hidden from you.
                 """
             ),
             input_schema={
