@@ -92,9 +92,6 @@ class Conversation:
         self.cache_manager = cache_manager
         self._callbacks: "list[ConversationCallback]" = callbacks or []
 
-        # Secret vault — substitutes placeholders in tool inputs and redacts literal
-        # secret values from anything added to history/reporter. Assigned per act()
-        # call by the Agent; defaults to an empty (no-op) vault.
         self.secret_vault: SecretVault = SecretVault()
 
         # State for current execution (set in start())

@@ -6,6 +6,7 @@ from askui.agent_base import Agent
 from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback
 from askui.container import telemetry
+from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import (
     ActSettings,
     MessageSettings,
@@ -46,6 +47,7 @@ class WebAgent(Agent):
             "act_tools",
             "callbacks",
             "truncation_strategy",
+            "secrets",
         }
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
@@ -57,6 +59,7 @@ class WebAgent(Agent):
         act_tools: list[Tool] | None = None,
         callbacks: list[ConversationCallback] | None = None,
         truncation_strategy: TruncationStrategy | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.os = PlaywrightAgentOs(reporter)
@@ -69,6 +72,7 @@ class WebAgent(Agent):
             settings=settings,
             callbacks=callbacks,
             truncation_strategy=truncation_strategy,
+            secrets=secrets,
         )
         self.act_tool_collection.add_agent_os(self.act_agent_os_facade)
         self.act_settings = ActSettings(

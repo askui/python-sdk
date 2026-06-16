@@ -3,6 +3,7 @@ from pathlib import Path
 from pydantic import ConfigDict, validate_call
 
 from askui.agent_settings import AgentSettings
+from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import (
     ActSettings,
     MessageSettings,
@@ -42,6 +43,7 @@ class WebTestingAgent(WebVisionAgent):
         reporters: list[Reporter] | None = None,
         settings: AgentSettings | None = None,
         retry: Retry | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         base_dir = Path.cwd() / "chat" / "testing"
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +51,7 @@ class WebTestingAgent(WebVisionAgent):
             reporters=reporters,
             settings=settings,
             retry=retry,
+            secrets=secrets,
             act_tools=[
                 CreateFeatureTool(base_dir),
                 RetrieveFeatureTool(base_dir),
