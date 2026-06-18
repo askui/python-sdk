@@ -38,10 +38,16 @@ class AndroidAgentOsFacade(AndroidAgentOs):
         self._scaler = CoordinateScaler(
             coordinate_space=coordinate_space,
             image_scaler=image_scaler,
-            fetch_real_resolution=lambda: self._agent_os.screenshot().size,
-            take_screenshot=lambda: self.screenshot(),
+            fetch_real_resolution=self._fetch_real_resolution,
+            take_screenshot=self._take_screenshot,
         )
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
+
+    def _fetch_real_resolution(self) -> tuple[int, int]:
+        return self._agent_os.screenshot().size
+
+    def _take_screenshot(self) -> Image.Image:
+        return self.screenshot()
 
     def connect(self) -> None:
         self._agent_os.connect()

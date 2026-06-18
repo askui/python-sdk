@@ -54,7 +54,7 @@ class ComputerAgentOsFacade(AgentOs):
             coordinate_space=coordinate_space,
             image_scaler=image_scaler,
             fetch_real_resolution=self._fetch_real_screen_resolution,
-            take_screenshot=lambda: self.screenshot(report=False),
+            take_screenshot=self._take_silent_screenshot,
         )
         self.tags.append(ToolTags.SCALED_AGENT_OS.value)
 
@@ -69,6 +69,9 @@ class ComputerAgentOsFacade(AgentOs):
     def screenshot(self, report: bool = True) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
         return self._scaler.scale_screenshot(screenshot)
+
+    def _take_silent_screenshot(self) -> Image.Image:
+        return self.screenshot(report=False)
 
     def _fetch_real_screen_resolution(self) -> tuple[int, int]:
         display = self._agent_os.retrieve_active_display()

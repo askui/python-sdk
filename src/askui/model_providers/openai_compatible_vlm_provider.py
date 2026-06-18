@@ -32,10 +32,11 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
             default from `OpenAIVlmProvider` (pixel coordinates).
         image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
             callable. If ``None``, inherits from `OpenAIVlmProvider`.
-        max_image_edge (int | None, optional): Maximum edge length (in pixels)
-            for screenshots sent to the model.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE``
-            from the environment if not provided.  Inherits the default from
-            `OpenAIVlmProvider` (2048).
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Inherits the default from
+            `OpenAIVlmProvider` (1024).
 
     Example:
         ```python
@@ -59,7 +60,7 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
         api_key: str | None = None,
         coordinate_space: VlmCoordinateSpace = _DEFAULT_COORDINATE_SPACE,
         image_scaler: ImageScaler | None = None,
-        max_image_edge: int | None = None,
+        image_edge_max: int | None = None,
     ) -> None:
         def _rewrite_url(request: httpx.Request) -> None:
             request.url = httpx.URL(endpoint_url)
@@ -77,5 +78,5 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
             client=client,
             coordinate_space=coordinate_space,
             image_scaler=image_scaler,
-            max_image_edge=max_image_edge,
+            image_edge_max=image_edge_max,
         )

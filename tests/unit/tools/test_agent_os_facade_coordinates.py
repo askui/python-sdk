@@ -14,14 +14,10 @@ from askui.models.shared.coordinate_space import (
     PixelCoordinateSpace,
     ScaledCoordinateSpace,
 )
+from askui.models.shared.image_scaler import ContainedImageScaler
 from askui.tools.android.agent_os_facade import AndroidAgentOsFacade
-from askui.utils.llm_image_utils import compute_contained_size, resize_image
 
-
-def _default_scaler(image: Image.Image) -> Image.Image:
-    """Scaler that mimics the default contained-size logic."""
-    target = compute_contained_size(image.width, image.height, 1024, 768)
-    return resize_image(image, target)
+_default_scaler = ContainedImageScaler()
 
 
 def _make_android_facade(
@@ -158,3 +154,115 @@ class TestFromAgentFalse:
         # x = 540 * 0.32 = 172.8 → 172, y = 1200 * 0.32 = 384
         assert x == pytest.approx(172, abs=2)
         assert y == pytest.approx(384, abs=2)
+
+
+# ---------------------------------------------------------------------------
+# Parametrized tests across multiple resolutions
+# ---------------------------------------------------------------------------
+
+_DEVICE_SIZES = [
+    pytest.param((1080, 1920), id="FHD portrait"),
+    pytest.param((1920, 1080), id="FHD landscape"),
+    pytest.param((1440, 2560), id="QHD portrait"),
+    pytest.param((2560, 1440), id="QHD landscape"),
+    pytest.param((1080, 2400), id="tall Android"),
+    pytest.param((768, 1024), id="iPad portrait"),
+    pytest.param((320, 480), id="small phone"),
+    pytest.param((3840, 2160), id="4K landscape"),
+]
+
+
+class TestScaledCenterAcrossResolutions:
+    """Center tap (500, 500) in 0-1000 grid should always map to device center."""
+
+    cs = ScaledCoordinateSpace(width=1000, height=1000)
+
+    @pytest.mark.parametrize("device_size", _DEVICE_SIZES)
+    def test_center_maps_to_device_center(self, device_size: tuple[int, int]) -> None:
+        facade = _make_android_facade(device_size, self.cs)
+        x, y = facade._scaler.scale_coordinates(500, 500)
+        assert x == device_size[0] // 2
+        assert y == device_size[1] // 2
+
+
+class TestNormalizedCenterAcrossResolutions:
+    """Center tap (0.5, 0.5) in normalized grid should always map to device center."""
+
+    cs = NormalizedCoordinateSpace()
+
+    @pytest.mark.parametrize("device_size", _DEVICE_SIZES)
+    def test_center_maps_to_device_center(self, device_size: tuple[int, int]) -> None:
+        facade = _make_android_facade(device_size, self.cs)
+        x, y = facade._scaler.scale_coordinates(0.5, 0.5)
+        assert x == device_size[0] // 2
+        assert y == device_size[1] // 2
+
+
+class TestPixelRoundTripAcrossResolutions:
+    """Pixel-space center of scaled image should round-trip close to device center."""
+
+    cs = PixelCoordinateSpace()
+
+    @pytest.mark.parametrize("device_size", _DEVICE_SIZES)
+    def test_pixel_center_round_trip(self, device_size: tuple[int, int]) -> None:
+        facade = _make_android_facade(device_size, self.cs)
+        target = facade._scaler.target_resolution
+        assert target is not None
+        cx, cy = target[0] // 2, target[1] // 2
+        x, y = facade._scaler.scale_coordinates(cx, cy)
+        assert x == pytest.approx(device_size[0] // 2, abs=5)
+        assert y == pytest.approx(device_size[1] // 2, abs=5)
+
+
+# ---------------------------------------------------------------------------
+# Negative / edge-case tests
+# ---------------------------------------------------------------------------
+
+
+class TestOutOfBoundsCoordinates:
+    """Coordinates outside the valid range should raise ValueError."""
+
+    def test_negative_coordinates_pixel_space(self) -> None:
+        facade = _make_android_facade((1080, 1920), PixelCoordinateSpace())
+        with pytest.raises(ValueError, match="out of bounds"):
+            facade._scaler.scale_coordinates(-10, -10)
+
+    def test_exceeding_target_pixel_space(self) -> None:
+        facade = _make_android_facade((1080, 1920), PixelCoordinateSpace())
+        target = facade._scaler.target_resolution
+        assert target is not None
+        with pytest.raises(ValueError, match="out of bounds"):
+            facade._scaler.scale_coordinates(target[0] + 100, target[1] + 100)
+
+    def test_bounds_check_can_be_disabled(self) -> None:
+        facade = _make_android_facade((1080, 1920), PixelCoordinateSpace())
+        target = facade._scaler.target_resolution
+        assert target is not None
+        # Should not raise when bounds checking is off
+        facade._scaler.scale_coordinates(
+            target[0] + 100, target[1] + 100, check_coordinates_in_bounds=False
+        )
+
+
+class TestResolutionLazyInit:
+    """Verify that real_screen_resolution is fetched lazily when not set."""
+
+    def test_fetches_resolution_on_first_scale(self) -> None:
+        mock_os = MagicMock()
+        mock_os.tags = []
+        device_size = (1080, 1920)
+        mock_os.screenshot.return_value = Image.new("RGB", device_size)
+        cs = ScaledCoordinateSpace(width=1000, height=1000)
+        facade = AndroidAgentOsFacade(
+            mock_os, coordinate_space=cs, image_scaler=_default_scaler
+        )
+        # real_screen_resolution starts unset
+        assert facade._scaler.real_screen_resolution is None  # noqa: S101
+        # Trigger a screenshot to populate target_resolution
+        facade.screenshot()
+        # Now scale — should have both resolutions set
+        scaler = facade._scaler
+        x, y = scaler.scale_coordinates(500, 500)
+        assert scaler.real_screen_resolution == device_size
+        assert x == 540
+        assert y == 960

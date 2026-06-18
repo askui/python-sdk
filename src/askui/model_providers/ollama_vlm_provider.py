@@ -42,10 +42,13 @@ class OllamaVlmProvider(OpenAIVlmProvider):
             enables auto-detection based on ``model_id``.
         image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
             callable. If ``None``, inherits from `OpenAIVlmProvider`.
-        max_image_edge (int | None, optional): Maximum edge length (in pixels)
-            for screenshots sent to the model.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE``
-            from the environment if not provided.  Inherits the default from
-            `OpenAIVlmProvider` (2048).
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, inherits from `OpenAIVlmProvider`.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Inherits the default from
+            `OpenAIVlmProvider` (1024).
 
     Example:
         ```python
@@ -67,7 +70,7 @@ class OllamaVlmProvider(OpenAIVlmProvider):
         client: OpenAI | None = None,
         coordinate_space: VlmCoordinateSpace | None = None,
         image_scaler: ImageScaler | None = None,
-        max_image_edge: int | None = None,
+        image_edge_max: int | None = None,
     ) -> None:
         self._coordinate_space_override = coordinate_space
         super().__init__(
@@ -77,7 +80,7 @@ class OllamaVlmProvider(OpenAIVlmProvider):
             client=client,
             coordinate_space=coordinate_space or PixelCoordinateSpace(),
             image_scaler=image_scaler,
-            max_image_edge=max_image_edge,
+            image_edge_max=image_edge_max,
         )
 
     @property

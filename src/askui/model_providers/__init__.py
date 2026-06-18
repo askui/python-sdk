@@ -41,7 +41,11 @@ from askui.models.shared.coordinate_space import (
     ScaledCoordinateSpace,
     VlmCoordinateSpace,
 )
-from askui.models.shared.image_scaler import ImageScaler
+from askui.models.shared.image_scaler import (
+    ContainedImageScaler,
+    ImageScaler,
+    PatchOptimizedImageScaler,
+)
 from askui.utils.model_pricing import ModelPricing
 
 __all__ = [
@@ -53,8 +57,10 @@ __all__ = [
     "DetectionProvider",
     "GoogleImageQAProvider",
     "ImageQAProvider",
+    "ContainedImageScaler",
     "ImageScaler",
     "ModelPricing",
+    "PatchOptimizedImageScaler",
     "NormalizedCoordinateSpace",
     "OllamaImageQAProvider",
     "OllamaVlmProvider",

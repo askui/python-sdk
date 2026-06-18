@@ -18,10 +18,9 @@ from askui.models.shared.coordinate_space import (
     PixelCoordinateSpace,
     VlmCoordinateSpace,
 )
-from askui.models.shared.image_scaler import ImageScaler
+from askui.models.shared.image_scaler import ImageScaler, PatchOptimizedImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
-from askui.utils.llm_image_utils import compute_patch_optimized_image
 from askui.utils.model_pricing import ModelPricing
 
 _DEFAULT_MODEL_ID = "gpt-5.4"
@@ -47,9 +46,13 @@ class OpenAIVlmProvider(VlmProvider):
         coordinate_space (VlmCoordinateSpace, optional): The coordinate grid
             the model emits coordinates in.  Defaults to the screenshot
             resolution (native pixel coordinates).
-        max_image_edge (int | None, optional): Maximum edge length (in pixels)
-            for screenshots sent to the model.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE``
-            from the environment if not provided.  Defaults to 2048.
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, uses patch-based scaling controlled by
+            ``image_edge_max``.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Defaults to 1024.
 
     Example:
         ```python
@@ -73,7 +76,7 @@ class OpenAIVlmProvider(VlmProvider):
         client: OpenAI | None = None,
         coordinate_space: VlmCoordinateSpace = _DEFAULT_COORDINATE_SPACE,
         image_scaler: ImageScaler | None = None,
-        max_image_edge: int | None = None,
+        image_edge_max: int | None = None,
         input_cost_per_million_tokens: float | None = None,
         output_cost_per_million_tokens: float | None = None,
         cache_write_cost_per_million_tokens: float | None = None,
@@ -83,11 +86,15 @@ class OpenAIVlmProvider(VlmProvider):
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
         )
         self._coordinate_space = coordinate_space
-        self._image_scaler_override = image_scaler
-        self._max_edge = (
-            max_image_edge
+        resolved_edge_max = (
+            image_edge_max
             or int(os.environ.get("ASKUI_VLM_MAX_IMAGE_EDGE", "0"))
             or _DEFAULT_MAX_IMAGE_EDGE
+        )
+        self._image_scaler = image_scaler or PatchOptimizedImageScaler(
+            max_edge=resolved_edge_max,
+            max_tokens=1536,
+            patch_size=32,
         )
         if client is not None:
             self._client = client
@@ -123,12 +130,7 @@ class OpenAIVlmProvider(VlmProvider):
     @property
     @override
     def image_scaler(self) -> ImageScaler:
-        if self._image_scaler_override is not None:
-            return self._image_scaler_override
-        max_edge = self._max_edge
-        return lambda image: compute_patch_optimized_image(
-            image, max_edge=max_edge, max_tokens=1536, patch_size=32
-        )
+        return self._image_scaler
 
     @cached_property
     def _messages_api(self) -> OpenAIMessagesApi:

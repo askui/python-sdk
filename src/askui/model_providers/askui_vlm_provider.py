@@ -15,10 +15,9 @@ from askui.models.shared.agent_message_param import (
     ThinkingConfigParam,
     ToolChoiceParam,
 )
-from askui.models.shared.image_scaler import ImageScaler
+from askui.models.shared.image_scaler import ImageScaler, PatchOptimizedImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
-from askui.utils.llm_image_utils import compute_patch_optimized_image
 
 _DEFAULT_MODEL_ID = "claude-sonnet-4-6"
 _DEFAULT_MAX_IMAGE_EDGE = 1024
@@ -40,10 +39,12 @@ class AskUIVlmProvider(VlmProvider):
         client (`Anthropic` | None, optional): Pre-configured Anthropic client.
             If provided, ``askui_settings`` is only used for the base URL.
         image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
-            callable. If ``None``, uses Anthropic-optimized patch-based scaling.
-        max_image_edge (int | None, optional): Maximum edge length (in pixels)
-            for screenshots sent to the model.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE``
-            from the environment if not provided.  Defaults to 1568.
+            callable. If ``None``, uses Anthropic-optimized patch-based scaling
+            controlled by ``image_edge_max``.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Defaults to 1024.
 
     Example:
         ```python
@@ -64,18 +65,20 @@ class AskUIVlmProvider(VlmProvider):
         model_id: str | None = None,
         client: Anthropic | None = None,
         image_scaler: ImageScaler | None = None,
-        max_image_edge: int | None = None,
+        image_edge_max: int | None = None,
     ) -> None:
         self._askui_settings = askui_settings or AskUiInferenceApiSettings()
         self._model_id_value = (
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
         )
         self._injected_client = client
-        self._image_scaler_override = image_scaler
-        self._max_edge = (
-            max_image_edge
+        resolved_edge_max = (
+            image_edge_max
             or int(os.environ.get("ASKUI_VLM_MAX_IMAGE_EDGE", "0"))
             or _DEFAULT_MAX_IMAGE_EDGE
+        )
+        self._image_scaler = image_scaler or PatchOptimizedImageScaler(
+            max_edge=resolved_edge_max
         )
 
     @property
@@ -86,10 +89,7 @@ class AskUIVlmProvider(VlmProvider):
     @property
     @override
     def image_scaler(self) -> ImageScaler:
-        if self._image_scaler_override is not None:
-            return self._image_scaler_override
-        max_edge = self._max_edge
-        return lambda image: compute_patch_optimized_image(image, max_edge=max_edge)
+        return self._image_scaler
 
     @cached_property
     def _messages_api(self) -> AnthropicMessagesApi:

@@ -12,6 +12,7 @@ from askui.models.shared.coordinate_space import (
     PixelCoordinateSpace,
     ScaledCoordinateSpace,
 )
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.prompts import SystemPrompt
 
 
@@ -95,13 +96,14 @@ class TestImageScaler:
         assert scaled.height <= 2048
 
     def test_custom_scaler_override(self) -> None:
-        def custom_scaler(image: Image.Image) -> Image.Image:
-            return image.resize((100, 100))
+        class _FixedSizeScaler(ImageScaler):
+            def __call__(self, image: Image.Image) -> Image.Image:
+                return image.resize((100, 100))
 
         provider = OpenAIVlmProvider(
             model_id="gpt-4o",
             api_key="sk-test",
-            image_scaler=custom_scaler,
+            image_scaler=_FixedSizeScaler(),
         )
         img = Image.new("RGB", (1920, 1080))
         scaled = provider.image_scaler(img)

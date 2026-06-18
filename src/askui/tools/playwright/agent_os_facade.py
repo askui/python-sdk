@@ -34,10 +34,16 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
         self._scaler = CoordinateScaler(
             coordinate_space=coordinate_space,
             image_scaler=image_scaler,
-            fetch_real_resolution=lambda: self._agent_os.screenshot(report=False).size,
-            take_screenshot=lambda: self.screenshot(report=False),
+            fetch_real_resolution=self._fetch_real_resolution,
+            take_screenshot=self._take_silent_screenshot,
         )
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
+
+    def _fetch_real_resolution(self) -> tuple[int, int]:
+        return self._agent_os.screenshot(report=False).size
+
+    def _take_silent_screenshot(self) -> Image.Image:
+        return self.screenshot(report=False)
 
     def connect(self) -> None:
         self._agent_os.connect()
