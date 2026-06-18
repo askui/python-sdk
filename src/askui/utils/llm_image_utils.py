@@ -171,6 +171,33 @@ def compute_patch_optimized_image(
     return resize_image(image, target)
 
 
+def downscale_image(
+    image: Image.Image,
+    max_dimension: int = 2000,
+) -> Image.Image:
+    """Downscale an image so its longest side does not exceed `max_dimension`.
+
+    Convenience wrapper around `compute_contained_size()` and `resize_image()`.
+    Unlike ``scale_image_to_fit()`` from `askui.utils.image_utils`, this does
+    **not** add black padding — the output keeps its natural dimensions.
+
+    Preserves the original aspect ratio. Images that are already
+    within the limit are returned unchanged.
+
+    Args:
+        image (Image.Image): The PIL Image to downscale.
+        max_dimension (int, optional): Maximum allowed size for the longest side.
+            Defaults to `2000`.
+
+    Returns:
+        Image.Image: The downscaled image, or the original if no scaling was needed.
+    """
+    target = compute_contained_size(
+        image.width, image.height, max_width=max_dimension, max_height=max_dimension
+    )
+    return resize_image(image, target)
+
+
 def resize_and_pad_image(
     image: Image.Image,
     target_size: tuple[int, int],
