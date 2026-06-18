@@ -16,7 +16,7 @@ from askui.tools.agent_os import (
     PcKey,
 )
 from askui.tools.askui.askui_controller import RenderObjectStyle  # noqa: TC001
-from askui.tools.coordinate_scaling_mixin import CoordinateScaler
+from askui.tools.coordinate_scaler import CoordinateScaler
 
 if TYPE_CHECKING:
     from askui.tools.askui.askui_ui_controller_grpc.generated import (

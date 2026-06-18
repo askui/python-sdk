@@ -6,7 +6,7 @@ from askui.models.shared.coordinate_space import VlmCoordinateSpace
 from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import Display, ModifierKey, PcKey
-from askui.tools.coordinate_scaling_mixin import CoordinateScaler
+from askui.tools.coordinate_scaler import CoordinateScaler
 from askui.tools.playwright.agent_os import PlaywrightAgentOs
 
 

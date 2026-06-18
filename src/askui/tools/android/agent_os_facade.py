@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.android.agent_os import ANDROID_KEY, AndroidAgentOs, AndroidDisplay
-from askui.tools.coordinate_scaling_mixin import CoordinateScaler
+from askui.tools.coordinate_scaler import CoordinateScaler
 
 if TYPE_CHECKING:
     from PIL import Image
