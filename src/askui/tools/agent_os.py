@@ -263,13 +263,18 @@ class AgentOs(ABC):
         """
 
     @abstractmethod
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         """
         Captures a screenshot of the current display.
 
         Args:
             report (bool, optional): Whether to include the screenshot in
                 reporting. Defaults to `True`.
+            unscaled (bool, optional): Whether to return the screenshot at its
+                full, real-screen resolution instead of the resolution shown to
+                the model. Only has an effect on scaling implementations (e.g.
+                `ComputerAgentOsFacade`); implementations that already return the
+                native resolution ignore it. Defaults to `False`.
 
         Returns:
             Image.Image: A PIL Image object containing the screenshot.

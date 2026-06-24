@@ -66,9 +66,24 @@ class ComputerAgentOsFacade(AgentOs):
         self._agent_os.disconnect()
         self._scaler.real_screen_resolution = None
 
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
+        if unscaled:
+            self._scaler.real_screen_resolution = screenshot.size
+            return screenshot
         return self._scaler.scale_screenshot(screenshot)
+
+    def scale_point_to_real_screen(self, x: float, y: float) -> tuple[int, int]:
+        """Map a point from the model coordinate space to real screen pixels.
+
+        Args:
+            x (float): The horizontal coordinate in the model coordinate space.
+            y (float): The vertical coordinate in the model coordinate space.
+
+        Returns:
+            tuple[int, int]: The corresponding `(x, y)` in real screen pixels.
+        """
+        return self._scaler.scale_coordinates(x, y)
 
     def _take_silent_screenshot(self) -> Image.Image:
         return self.screenshot(report=False)

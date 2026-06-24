@@ -197,12 +197,15 @@ class PlaywrightAgentOs(AgentOs):
         )
 
     @override
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         """Capture a screenshot of the current page.
 
         Args:
             report (bool, optional): Whether to include the screenshot in
                 reporting. Defaults to `True`.
+            unscaled (bool, optional): Accepted for interface compatibility. This
+                agent OS always returns the native page resolution, so it has no
+                effect. Defaults to `False`.
 
         Returns:
             Image.Image: A PIL Image object containing the screenshot.

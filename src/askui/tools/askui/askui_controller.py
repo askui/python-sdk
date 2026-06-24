@@ -349,13 +349,16 @@ class AskUiControllerClient(AgentOs):
 
     @telemetry.record_call()
     @override
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         """
         Take a screenshot of the current screen.
 
         Args:
             report (bool, optional): Whether to include the screenshot in reporting.
                 Defaults to `True`.
+            unscaled (bool, optional): Accepted for interface compatibility. This
+                client always returns the native screen resolution, so it has no
+                effect. Defaults to `False`.
 
         Returns:
             Image.Image: A PIL Image object containing the screenshot.
