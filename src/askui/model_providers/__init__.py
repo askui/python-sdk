@@ -35,6 +35,17 @@ from askui.model_providers.openai_compatible_vlm_provider import (
 from askui.model_providers.openai_image_qa_provider import OpenAIImageQAProvider
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
 from askui.model_providers.vlm_provider import VlmProvider
+from askui.models.shared.coordinate_space import (
+    NormalizedCoordinateSpace,
+    PixelCoordinateSpace,
+    ScaledCoordinateSpace,
+    VlmCoordinateSpace,
+)
+from askui.models.shared.image_scaler import (
+    ContainedImageScaler,
+    ImageScaler,
+    PatchOptimizedImageScaler,
+)
 from askui.utils.model_pricing import ModelPricing
 
 __all__ = [
@@ -46,11 +57,18 @@ __all__ = [
     "DetectionProvider",
     "GoogleImageQAProvider",
     "ImageQAProvider",
+    "ContainedImageScaler",
+    "ImageScaler",
     "ModelPricing",
+    "PatchOptimizedImageScaler",
+    "NormalizedCoordinateSpace",
     "OllamaImageQAProvider",
     "OllamaVlmProvider",
+    "OpenAICompatibleVlmProvider",
     "OpenAIImageQAProvider",
     "OpenAIVlmProvider",
-    "OpenAICompatibleVlmProvider",
+    "PixelCoordinateSpace",
+    "ScaledCoordinateSpace",
+    "VlmCoordinateSpace",
     "VlmProvider",
 ]

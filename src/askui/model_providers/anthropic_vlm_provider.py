@@ -14,11 +14,13 @@ from askui.models.shared.agent_message_param import (
     ThinkingConfigParam,
     ToolChoiceParam,
 )
+from askui.models.shared.image_scaler import ImageScaler, PatchOptimizedImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.model_pricing import ModelPricing
 
 _DEFAULT_MODEL_ID = "claude-sonnet-4-6"
+_DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
 class AnthropicVlmProvider(VlmProvider):
@@ -46,6 +48,13 @@ class AnthropicVlmProvider(VlmProvider):
             cost in USD per 1M output tokens.
         cache_write_cost_per_million_tokens (float | None, optional): Override
             cost in USD per 1M cache write input tokens.
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, uses Anthropic-optimized patch-based scaling
+            controlled by ``image_edge_max``.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Defaults to 1024.
         cache_read_cost_per_million_tokens (float | None, optional): Override
             cost in USD per 1M cache read input tokens.
 
@@ -70,6 +79,8 @@ class AnthropicVlmProvider(VlmProvider):
         auth_token: str | None = None,
         model_id: str | None = None,
         client: Anthropic | None = None,
+        image_scaler: ImageScaler | None = None,
+        image_edge_max: int | None = None,
         input_cost_per_million_tokens: float | None = None,
         output_cost_per_million_tokens: float | None = None,
         cache_write_cost_per_million_tokens: float | None = None,
@@ -77,6 +88,14 @@ class AnthropicVlmProvider(VlmProvider):
     ) -> None:
         self._model_id_value = (
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
+        )
+        resolved_edge_max = (
+            image_edge_max
+            or int(os.environ.get("ASKUI_VLM_MAX_IMAGE_EDGE", "0"))
+            or _DEFAULT_MAX_IMAGE_EDGE
+        )
+        self._image_scaler = image_scaler or PatchOptimizedImageScaler(
+            max_edge=resolved_edge_max
         )
         if client is not None:
             self.client = client
@@ -103,6 +122,11 @@ class AnthropicVlmProvider(VlmProvider):
     @override
     def pricing(self) -> ModelPricing | None:
         return self._pricing
+
+    @property
+    @override
+    def image_scaler(self) -> ImageScaler:
+        return self._image_scaler
 
     @cached_property
     def _messages_api(self) -> AnthropicMessagesApi:

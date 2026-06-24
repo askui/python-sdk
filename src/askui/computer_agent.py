@@ -130,7 +130,9 @@ class ComputerAgent(Agent):
             truncation_strategy=truncation_strategy,
         )
         self.act_agent_os_facade: ComputerAgentOsFacade = ComputerAgentOsFacade(
-            self.tools.os
+            self.tools.os,
+            coordinate_space=self._vlm_provider.coordinate_space,
+            image_scaler=self._vlm_provider.image_scaler,
         )
         self.act_tool_collection.add_agent_os(self.act_agent_os_facade)
         # Override default act settings with computer-specific settings

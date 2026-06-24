@@ -4,7 +4,7 @@ from typing import Tuple
 from PIL import Image
 
 from askui.models.shared.tools import Tool
-from askui.utils.image_utils import scale_image_to_fit
+from askui.utils.llm_image_utils import compute_contained_size, resize_image
 
 
 class LoadImageTool(Tool):
@@ -116,7 +116,13 @@ class LoadImageTool(Tool):
             raise FileExistsError(error_msg)
 
         image = Image.open(absolute_image_path)
-        image = scale_image_to_fit(image, target_size=self._target_size)
+        target_size = compute_contained_size(
+            image.width,
+            image.height,
+            self._target_size[0],
+            self._target_size[1],
+        )
+        image = resize_image(image, target_size)
 
         return (
             f"Image was successfully loaded from {absolute_image_path}",

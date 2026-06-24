@@ -4,6 +4,13 @@ import httpx
 from openai import OpenAI
 
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
+from askui.models.shared.coordinate_space import (
+    PixelCoordinateSpace,
+    VlmCoordinateSpace,
+)
+from askui.models.shared.image_scaler import ImageScaler
+
+_DEFAULT_COORDINATE_SPACE = PixelCoordinateSpace()
 
 
 class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
@@ -20,6 +27,16 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
             (e.g. ``"https://my-host/v1/chat/completions"``).
         model_id (str): Model name expected by the deployment.
         api_key (str | None, optional): API key for the endpoint.
+        coordinate_space (`VlmCoordinateSpace` | None, optional): The coordinate
+            grid the model emits coordinates in.  If ``None``, inherits the
+            default from `OpenAIVlmProvider` (pixel coordinates).
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, inherits from `OpenAIVlmProvider`.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Inherits the default from
+            `OpenAIVlmProvider` (1024).
 
     Example:
         ```python
@@ -41,6 +58,9 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
         endpoint_url: str,
         model_id: str | None = None,
         api_key: str | None = None,
+        coordinate_space: VlmCoordinateSpace = _DEFAULT_COORDINATE_SPACE,
+        image_scaler: ImageScaler | None = None,
+        image_edge_max: int | None = None,
     ) -> None:
         def _rewrite_url(request: httpx.Request) -> None:
             request.url = httpx.URL(endpoint_url)
@@ -56,4 +76,7 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
         super().__init__(
             model_id=model_id,
             client=client,
+            coordinate_space=coordinate_space,
+            image_scaler=image_scaler,
+            image_edge_max=image_edge_max,
         )

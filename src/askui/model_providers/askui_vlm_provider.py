@@ -15,10 +15,12 @@ from askui.models.shared.agent_message_param import (
     ThinkingConfigParam,
     ToolChoiceParam,
 )
+from askui.models.shared.image_scaler import ImageScaler, PatchOptimizedImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 
 _DEFAULT_MODEL_ID = "claude-sonnet-4-6"
+_DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
 class AskUIVlmProvider(VlmProvider):
@@ -29,14 +31,21 @@ class AskUIVlmProvider(VlmProvider):
     on the first API call, not at construction time.
 
     Args:
-        workspace_id (str | None, optional): AskUI workspace ID. Reads
-            `ASKUI_WORKSPACE_ID` from the environment if not provided.
-        token (str | None, optional): AskUI API token. Reads `ASKUI_TOKEN`
-            from the environment if not provided.
-        model_id (str, optional): Claude model to use. Defaults to
-            `"claude-sonnet-4-6"`.
-        client (Anthropic | None, optional): Pre-configured Anthropic client.
-            If provided, `workspace_id` and `token` are ignored.
+        askui_settings (`AskUiInferenceApiSettings` | None, optional):
+            Connection settings (workspace ID, token, base URL).  Reads
+            from environment variables if not provided.
+        model_id (str | None, optional): Claude model to use. Defaults to
+            ``"claude-sonnet-4-6"``.
+        client (`Anthropic` | None, optional): Pre-configured Anthropic client.
+            If provided, ``askui_settings`` is only used for the base URL.
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, uses Anthropic-optimized patch-based scaling
+            controlled by ``image_edge_max``.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Defaults to 1024.
+
     Example:
         ```python
         from askui import AgentSettings, ComputerAgent
@@ -44,8 +53,6 @@ class AskUIVlmProvider(VlmProvider):
 
         agent = ComputerAgent(settings=AgentSettings(
             vlm_provider=AskUIVlmProvider(
-                workspace_id="my-workspace",
-                token="my-token",
                 model_id="claude-opus-4-6-20260401",
             )
         ))
@@ -57,17 +64,32 @@ class AskUIVlmProvider(VlmProvider):
         askui_settings: AskUiInferenceApiSettings | None = None,
         model_id: str | None = None,
         client: Anthropic | None = None,
+        image_scaler: ImageScaler | None = None,
+        image_edge_max: int | None = None,
     ) -> None:
         self._askui_settings = askui_settings or AskUiInferenceApiSettings()
         self._model_id_value = (
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
         )
         self._injected_client = client
+        resolved_edge_max = (
+            image_edge_max
+            or int(os.environ.get("ASKUI_VLM_MAX_IMAGE_EDGE", "0"))
+            or _DEFAULT_MAX_IMAGE_EDGE
+        )
+        self._image_scaler = image_scaler or PatchOptimizedImageScaler(
+            max_edge=resolved_edge_max
+        )
 
     @property
     @override
     def model_id(self) -> str:
         return self._model_id_value
+
+    @property
+    @override
+    def image_scaler(self) -> ImageScaler:
+        return self._image_scaler
 
     @cached_property
     def _messages_api(self) -> AnthropicMessagesApi:

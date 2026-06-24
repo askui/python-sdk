@@ -60,7 +60,6 @@ class WebAgent(Agent):
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.os = PlaywrightAgentOs(reporter)
-        self.act_agent_os_facade = PlaywrightAgentOsFacade(self.os)
         super().__init__(
             reporter=reporter,
             retry=retry,
@@ -69,6 +68,11 @@ class WebAgent(Agent):
             settings=settings,
             callbacks=callbacks,
             truncation_strategy=truncation_strategy,
+        )
+        self.act_agent_os_facade = PlaywrightAgentOsFacade(
+            self.os,
+            coordinate_space=self._vlm_provider.coordinate_space,
+            image_scaler=self._vlm_provider.image_scaler,
         )
         self.act_tool_collection.add_agent_os(self.act_agent_os_facade)
         self.act_settings = ActSettings(

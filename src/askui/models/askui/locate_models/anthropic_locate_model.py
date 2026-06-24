@@ -20,8 +20,8 @@ from askui.prompts.locate_prompts import build_system_prompt_locate
 from askui.utils.image_utils import (
     ImageSource,
     scale_coordinates,
-    scale_image_to_fit,
 )
+from askui.utils.llm_image_utils import compute_contained_size, resize_image
 
 
 class AnthropicLocateModel(LocateModel):
@@ -77,14 +77,17 @@ class AnthropicLocateModel(LocateModel):
         try:
             prompt = f"Click on {locator_serialized}"
             resolution = locate_settings.resolution
-            screen_width = resolution.width
-            screen_height = resolution.height
-            scaled_image = scale_image_to_fit(
-                image.root,
-                resolution,
+            target_size = compute_contained_size(
+                image.root.width,
+                image.root.height,
+                resolution.width,
+                resolution.height,
             )
+            scaled_image = resize_image(image.root, target_size)
             messages = built_messages_for_get_and_locate(scaled_image, prompt)
-            system = build_system_prompt_locate(str(screen_width), str(screen_height))
+            system = build_system_prompt_locate(
+                str(scaled_image.width), str(scaled_image.height)
+            )
             message = self._messages_api.create_message(
                 messages=messages,
                 model_id=self._model_id,
@@ -100,7 +103,7 @@ class AnthropicLocateModel(LocateModel):
                 scale_coordinates(
                     extract_click_coordinates(content_text.text),
                     image.root.size,
-                    resolution,
+                    scaled_image.size,
                     inverse=True,
                 )
             ]

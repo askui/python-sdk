@@ -14,11 +14,18 @@ from askui.models.shared.agent_message_param import (
     ThinkingConfigParam,
     ToolChoiceParam,
 )
+from askui.models.shared.coordinate_space import (
+    PixelCoordinateSpace,
+    VlmCoordinateSpace,
+)
+from askui.models.shared.image_scaler import ImageScaler, PatchOptimizedImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.model_pricing import ModelPricing
 
 _DEFAULT_MODEL_ID = "gpt-5.4"
+_DEFAULT_COORDINATE_SPACE = PixelCoordinateSpace()
+_DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
 class OpenAIVlmProvider(VlmProvider):
@@ -36,6 +43,16 @@ class OpenAIVlmProvider(VlmProvider):
             to the OpenAI API (``https://api.openai.com/v1``).
         client (`OpenAI` | None, optional): Pre-configured OpenAI client.
             If provided, ``api_key`` and ``base_url`` are ignored.
+        coordinate_space (VlmCoordinateSpace, optional): The coordinate grid
+            the model emits coordinates in.  Defaults to the screenshot
+            resolution (native pixel coordinates).
+        image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
+            callable. If ``None``, uses patch-based scaling controlled by
+            ``image_edge_max``.
+        image_edge_max (int | None, optional): Maximum edge length (in pixels)
+            for screenshots sent to the model.  Only used when ``image_scaler``
+            is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
+            environment if not provided.  Defaults to 1024.
 
     Example:
         ```python
@@ -57,6 +74,9 @@ class OpenAIVlmProvider(VlmProvider):
         api_key: str | None = None,
         base_url: str | None = None,
         client: OpenAI | None = None,
+        coordinate_space: VlmCoordinateSpace = _DEFAULT_COORDINATE_SPACE,
+        image_scaler: ImageScaler | None = None,
+        image_edge_max: int | None = None,
         input_cost_per_million_tokens: float | None = None,
         output_cost_per_million_tokens: float | None = None,
         cache_write_cost_per_million_tokens: float | None = None,
@@ -64,6 +84,17 @@ class OpenAIVlmProvider(VlmProvider):
     ) -> None:
         self._model_id_value = (
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
+        )
+        self._coordinate_space = coordinate_space
+        resolved_edge_max = (
+            image_edge_max
+            or int(os.environ.get("ASKUI_VLM_MAX_IMAGE_EDGE", "0"))
+            or _DEFAULT_MAX_IMAGE_EDGE
+        )
+        self._image_scaler = image_scaler or PatchOptimizedImageScaler(
+            max_edge=resolved_edge_max,
+            max_tokens=1536,
+            patch_size=32,
         )
         if client is not None:
             self._client = client
@@ -88,13 +119,29 @@ class OpenAIVlmProvider(VlmProvider):
 
     @property
     @override
+    def coordinate_space(self) -> VlmCoordinateSpace:
+        return self._coordinate_space
+
+    @property
+    @override
     def pricing(self) -> ModelPricing | None:
         return self._pricing
+
+    @property
+    @override
+    def image_scaler(self) -> ImageScaler:
+        return self._image_scaler
 
     @cached_property
     def _messages_api(self) -> OpenAIMessagesApi:
         """Lazily initialise the `OpenAIMessagesApi` on first use."""
         return OpenAIMessagesApi(client=self._client)
+
+    @override
+    def augment_system_prompt(self, system: SystemPrompt) -> SystemPrompt:
+        """Append coordinate and resolution info to the system prompt."""
+        coord_info = self.coordinate_space.build_prompt_section()
+        return SystemPrompt(prompt=f"{str(system)}\n\n{coord_info}")
 
     @override
     def create_message(
@@ -108,6 +155,8 @@ class OpenAIVlmProvider(VlmProvider):
         temperature: float | None = None,
         provider_options: dict[str, Any] | None = None,
     ) -> MessageParam:
+        if system is not None:
+            system = self.augment_system_prompt(system)
         return self._messages_api.create_message(
             messages=messages,
             model_id=self._model_id_value,

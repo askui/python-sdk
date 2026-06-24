@@ -20,7 +20,7 @@ from askui.models.shared.settings import GetSettings
 from askui.models.types.response_schemas import ResponseSchema
 from askui.prompts.get_prompts import SYSTEM_PROMPT_GET
 from askui.utils.excel_utils import OfficeDocumentSource
-from askui.utils.image_utils import scale_image_to_fit
+from askui.utils.llm_image_utils import compute_contained_size, resize_image
 from askui.utils.pdf_utils import PdfSource
 from askui.utils.source_utils import Source
 
@@ -78,10 +78,13 @@ class AnthropicGetModel(GetModel):
             if response_schema is not None:
                 error_msg = "Response schema is not yet supported for Anthropic"
                 raise NotImplementedError(error_msg)
-            scaled_image = scale_image_to_fit(
-                source.root,
-                get_settings.resolution,
+            target_size = compute_contained_size(
+                source.root.width,
+                source.root.height,
+                get_settings.resolution.width,
+                get_settings.resolution.height,
             )
+            scaled_image = resize_image(source.root, target_size)
             messages = built_messages_for_get_and_locate(scaled_image, query)
             message = self._messages_api.create_message(
                 messages=messages,
