@@ -8,6 +8,7 @@ from .window_management import (
     ComputerSetProcessInFocusTool,
     ComputerSetWindowInFocusTool,
 )
+from .zoom import ComputerZoomTool
 
 __all__ = [
     "ComputerGetFileNamesTool",
@@ -18,4 +19,5 @@ __all__ = [
     "ComputerAddWindowAsVirtualDisplayTool",
     "ComputerSetWindowInFocusTool",
     "ComputerSetProcessInFocusTool",
+    "ComputerZoomTool",
 ]

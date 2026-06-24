@@ -55,8 +55,10 @@ class PlaywrightAgentOsFacade(PlaywrightAgentOs):
         self._agent_os.disconnect()
         self._scaler.real_screen_resolution = None
 
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
+        if unscaled:
+            return screenshot
         return self._scaler.scale_screenshot(screenshot)
 
     def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
