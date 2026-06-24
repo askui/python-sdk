@@ -39,9 +39,21 @@ class TestComputerZoomTool:
 
         message, crop = tool(region=[100, 100, 200, 200])
 
-        # 100px box in model space -> 200px box at full resolution
+        # 100px box in model space -> 200px box at full resolution.
+        # The model-image scaler only downscales, so a crop within bounds
+        # passes through unchanged.
         assert crop.size == (200, 200)
         assert "[100, 100, 200, 200]" in message
+
+    def test_oversized_crop_is_scaled_to_model_bounds(self) -> None:
+        facade = _make_facade((2048, 1536))
+        tool = ComputerZoomTool(agent_os=facade)
+
+        # Full model space -> full 2048x1536 real region, larger than the
+        # 1024x768 scaler bounds, so it is downscaled like a screenshot.
+        _, crop = tool(region=[0, 0, 1024, 768])
+
+        assert crop.size == (1024, 768)
 
     def test_requests_unscaled_screenshot(self, mocker: MockerFixture) -> None:
         facade = _make_facade((2048, 1536))

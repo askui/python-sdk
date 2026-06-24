@@ -91,6 +91,7 @@ class ComputerZoomTool(ComputerBaseTool):
         bottom = max(top + 1, min(bottom, screenshot.height))
 
         crop = screenshot.crop((left, top, right, bottom))
+        crop = agent_os.scale_image_for_model(crop)
         message = (
             f"Zoomed into region [{x1}, {y1}, {x2}, {y2}] shown at full "
             "resolution. Coordinates for further actions remain in the original "

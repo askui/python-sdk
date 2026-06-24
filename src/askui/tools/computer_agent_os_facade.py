@@ -50,6 +50,7 @@ class ComputerAgentOsFacade(AgentOs):
         image_scaler: ImageScaler,
     ) -> None:
         self._agent_os = agent_os
+        self._image_scaler = image_scaler
         self._scaler = CoordinateScaler(
             coordinate_space=coordinate_space,
             image_scaler=image_scaler,
@@ -72,6 +73,21 @@ class ComputerAgentOsFacade(AgentOs):
             self._scaler.real_screen_resolution = screenshot.size
             return screenshot
         return self._scaler.scale_screenshot(screenshot)
+
+    def scale_image_for_model(self, image: Image.Image) -> Image.Image:
+        """Apply the same scaling screenshots receive, without recording state.
+
+        Unlike `screenshot`, this does not update the coordinate scaler's
+        recorded resolutions, so it is safe to call on arbitrary images (e.g. a
+        cropped region) without corrupting coordinate mapping.
+
+        Args:
+            image (Image.Image): The image to scale for model consumption.
+
+        Returns:
+            Image.Image: The scaled image.
+        """
+        return self._image_scaler(image)
 
     def scale_point_to_real_screen(self, x: float, y: float) -> tuple[int, int]:
         """Map a point from the model coordinate space to real screen pixels.
