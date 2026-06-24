@@ -89,17 +89,24 @@ class ComputerAgentOsFacade(AgentOs):
         """
         return self._image_scaler(image)
 
-    def scale_point_to_real_screen(self, x: float, y: float) -> tuple[int, int]:
+    def scale_point_to_real_screen(
+        self, x: float, y: float, check_coordinates_in_bounds: bool = True
+    ) -> tuple[int, int]:
         """Map a point from the model coordinate space to real screen pixels.
 
         Args:
             x (float): The horizontal coordinate in the model coordinate space.
             y (float): The vertical coordinate in the model coordinate space.
+            check_coordinates_in_bounds (bool, optional): Whether to raise if the
+                mapped coordinate falls outside the screen. Set to `False` when the
+                caller clamps the result itself. Defaults to `True`.
 
         Returns:
             tuple[int, int]: The corresponding `(x, y)` in real screen pixels.
         """
-        return self._scaler.scale_coordinates(x, y)
+        return self._scaler.scale_coordinates(
+            x, y, check_coordinates_in_bounds=check_coordinates_in_bounds
+        )
 
     def _take_silent_screenshot(self) -> Image.Image:
         return self.screenshot(report=False)

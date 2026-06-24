@@ -3,6 +3,7 @@ from typing import cast
 from PIL import Image
 
 from askui.models.shared import ComputerBaseTool, ToolTags
+from askui.reporting import NULL_REPORTER, Reporter
 from askui.tools.computer_agent_os_facade import ComputerAgentOsFacade
 
 
@@ -16,6 +17,13 @@ class ComputerZoomTool(ComputerBaseTool):
     screenshot and returns it magnified. The returned image is only a magnified
     view; coordinates for subsequent actions still use the original screen
     coordinate space.
+
+    Args:
+        agent_os (`ComputerAgentOsFacade`, optional): The agent OS facade. Injected
+            automatically when the tool is registered with an agent.
+        reporter (`Reporter`, optional): Reporter used to show the cropped image
+            (the exact image handed to the model) in the report. Defaults to a
+            null reporter that discards messages.
 
     Example:
         ```python
@@ -33,18 +41,32 @@ class ComputerZoomTool(ComputerBaseTool):
         ```
     """
 
-    def __init__(self, agent_os: ComputerAgentOsFacade | None = None) -> None:
+    def __init__(
+        self,
+        agent_os: ComputerAgentOsFacade | None = None,
+        reporter: Reporter = NULL_REPORTER,
+    ) -> None:
         super().__init__(
             name="zoom",
             description=(
-                "View a specific region of the screen at full resolution. Use "
-                "this to read small text or to locate small UI elements (icons, "
-                "tab titles, status-bar text, line numbers, tiny buttons) that "
-                "are not legible in a normal screenshot. Provide the region as "
-                "[x1, y1, x2, y2], the top-left and bottom-right corners in the "
-                "same coordinates you use for clicking. The returned image is "
-                "only a magnified view; coordinates for subsequent actions still "
-                "use the original screen coordinate space."
+                "View a specific region of the screen at full resolution. This "
+                "is a last resort for reading content that is genuinely too small "
+                "to make out in the normal screenshot (e.g. tiny text, icons, "
+                "status-bar text, line numbers) when that detail is required to "
+                "decide your next action.\n"
+                "Use it sparingly. Before zooming, rely on the normal screenshot "
+                "you already have. Do NOT use this tool when:\n"
+                "- the relevant text or element is already legible in the normal "
+                "screenshot;\n"
+                "- you only need to locate or click an element (the normal "
+                "screenshot coordinates are sufficient for that);\n"
+                "- you have already zoomed into this region — do not re-zoom the "
+                "same area.\n"
+                "Provide the region as [x1, y1, x2, y2], the top-left and "
+                "bottom-right corners in the same coordinates you use for "
+                "clicking. The returned image is only a magnified view; "
+                "coordinates for subsequent actions still use the original screen "
+                "coordinate space."
             ),
             input_schema={
                 "type": "object",
@@ -56,7 +78,7 @@ class ComputerZoomTool(ComputerBaseTool):
                             "top-left and bottom-right corners in screen "
                             "coordinates."
                         ),
-                        "items": {"type": "integer"},
+                        "items": {"type": "number"},
                         "minItems": 4,
                         "maxItems": 4,
                     },
@@ -67,8 +89,9 @@ class ComputerZoomTool(ComputerBaseTool):
             required_tags=[ToolTags.SCALED_AGENT_OS.value],
         )
         self.is_cacheable = True
+        self._reporter = reporter
 
-    def __call__(self, region: list[int]) -> tuple[str, Image.Image]:
+    def __call__(self, region: list[float]) -> tuple[str, Image.Image]:
         if len(region) != 4:  # noqa: PLR2004
             error_msg = (
                 f"region must contain exactly 4 values [x1, y1, x2, y2], "
@@ -77,24 +100,39 @@ class ComputerZoomTool(ComputerBaseTool):
             raise ValueError(error_msg)
 
         agent_os = cast("ComputerAgentOsFacade", self.agent_os)
-        screenshot = agent_os.screenshot(unscaled=True)
+        # Suppress reporting of the uncropped screenshot; we report the crop below.
+        screenshot = agent_os.screenshot(unscaled=True, report=False)
 
+        # Map the model-space corners to real screen pixels. Skip the mapper's
+        # bounds check; we clamp to the screenshot below so a slightly oversized
+        # region from the model crops to the edge instead of erroring.
         x1, y1, x2, y2 = region
-        left, top = agent_os.scale_point_to_real_screen(x1, y1)
-        right, bottom = agent_os.scale_point_to_real_screen(x2, y2)
+        left, top = agent_os.scale_point_to_real_screen(
+            x1, y1, check_coordinates_in_bounds=False
+        )
+        right, bottom = agent_os.scale_point_to_real_screen(
+            x2, y2, check_coordinates_in_bounds=False
+        )
 
         left, right = sorted((left, right))
         top, bottom = sorted((top, bottom))
-        left = max(0, min(left, screenshot.width))
+        left = max(0, min(left, screenshot.width - 1))
         right = max(left + 1, min(right, screenshot.width))
-        top = max(0, min(top, screenshot.height))
+        top = max(0, min(top, screenshot.height - 1))
         bottom = max(top + 1, min(bottom, screenshot.height))
 
         crop = screenshot.crop((left, top, right, bottom))
         crop = agent_os.scale_image_for_model(crop)
+        # Report the region in real screen pixels (where the crop was actually
+        # taken), not the raw coordinates the model passed.
+        self._reporter.add_message(
+            "AgentOS", f"zoom([{left}, {top}, {right}, {bottom}])", crop
+        )
         message = (
             f"Zoomed into region [{x1}, {y1}, {x2}, {y2}] shown at full "
             "resolution. Coordinates for further actions remain in the original "
-            "screen coordinate space."
+            "screen coordinate space. Now proceed with the next action (e.g. "
+            "move/click) using those coordinates; do not zoom again unless a "
+            "different region is still too small to read."
         )
         return message, crop

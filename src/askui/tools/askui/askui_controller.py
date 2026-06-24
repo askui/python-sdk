@@ -378,7 +378,8 @@ class AskUiControllerClient(AgentOs):
             screenResponse.bitmap.data,
         ).split()
         image = Image.merge("RGB", (b, g, r))
-        self._reporter.add_message("AgentOS", "screenshot()", image)
+        if report:
+            self._reporter.add_message("AgentOS", "screenshot()", image)
         return image
 
     @telemetry.record_call()
