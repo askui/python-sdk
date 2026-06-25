@@ -5,6 +5,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from askui.models.shared.tool_tags import ToolTags
+from askui.utils.pdf_utils import PdfSource
 
 if TYPE_CHECKING:
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
@@ -698,18 +699,18 @@ class AgentOs(ABC):
         """
         raise NotImplementedError
 
-    def get_file(self, path: str) -> Image.Image | str:
+    def get_file(self, path: str) -> Image.Image | PdfSource | str:
         """
         Read a file from the automation target (desktop Agent OS).
 
-        Binary image payloads are returned as `PIL.Image.Image` when recognized;
-        otherwise UTF-8 text when decodable.
+        Binary image payloads are returned as `PIL.Image.Image` when recognized,
+        PDF documents as `PdfSource`; otherwise UTF-8 text when decodable.
 
         Args:
             path (str): File path on the target system.
 
         Returns:
-            Image.Image | str: Decoded file contents.
+            Image.Image | PdfSource | str: Decoded file contents.
 
         Raises:
             NotImplementedError: If the implementation does not support this operation.

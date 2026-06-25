@@ -14,11 +14,13 @@ from .computer_agent import ComputerAgent, VisionAgent
 from .locators import Locator
 from .models import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     CacheControlEphemeralParam,
     CitationCharLocationParam,
     CitationContentBlockLocationParam,
     CitationPageLocationParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     OnMessageCb,
@@ -46,6 +48,7 @@ from .models.types.response_schemas import ResponseSchema, ResponseSchemaBase
 from .retry import ConfigurableRetry, Retry
 from .tools import ModifierKey, PcKey
 from .utils.image_utils import ImageSource
+from .utils.pdf_utils import PdfSource
 from .utils.source_utils import InputSource
 
 try:
@@ -76,6 +79,7 @@ __all__ = [
     "AgentSettings",
     "ActSettings",
     "Base64ImageSourceParam",
+    "Base64PdfSourceParam",
     "CacheControlEphemeralParam",
     "CitationCharLocationParam",
     "CitationContentBlockLocationParam",
@@ -85,10 +89,12 @@ __all__ = [
     "ConversationCallback",
     "DEFAULT_GET_RESOLUTION",
     "DEFAULT_LOCATE_RESOLUTION",
+    "DocumentBlockParam",
     "GetSettings",
     "ImageBlockParam",
     "ImageSource",
     "InputSource",
+    "PdfSource",
     "Locator",
     "LocateSettings",
     "MessageParam",

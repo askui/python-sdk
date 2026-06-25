@@ -14,8 +14,10 @@ from fastmcp.client.client import CallToolResult, ProgressHandler
 from fastmcp.tools import Tool as FastMcpTool
 from fastmcp.utilities.types import Image as FastMcpImage
 from mcp import Tool as McpTool
+from mcp.types import BlobResourceContents as McpBlobResourceContents
 from mcp.types import ImageContent as McpImageContent
 from mcp.types import TextContent as McpTextContent
+from mcp.types import TextResourceContents as McpTextResourceContents
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from typing_extensions import Self
@@ -23,8 +25,10 @@ from typing_extensions import Self
 from askui.models.exceptions import AutomationError
 from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     CacheControlEphemeralParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     TextBlockParam,
     ToolParam,
@@ -34,10 +38,11 @@ from askui.models.shared.agent_message_param import (
 from askui.tools import AgentOs
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.utils.image_utils import ImageSource, base64_to_image
+from askui.utils.pdf_utils import PdfSource
 
 logger = logging.getLogger(__name__)
 
-PrimitiveToolCallResult = Image.Image | None | str | BaseModel
+PrimitiveToolCallResult = Image.Image | None | str | BaseModel | PdfSource
 
 ToolCallResult = (
     PrimitiveToolCallResult
@@ -52,40 +57,69 @@ IMAGE_MEDIA_TYPES_SUPPORTED: list[
 ] = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 
+def _convert_mcp_resource(
+    resource: McpTextResourceContents | McpBlobResourceContents,
+) -> TextBlockParam | DocumentBlockParam | None:
+    """Convert an MCP embedded resource into a content block.
+
+    Text resources become a text block; PDF blob resources become a document
+    block. Other binary resources are unsupported and dropped.
+    """
+    if isinstance(resource, McpTextResourceContents):
+        return TextBlockParam(text=resource.text)
+    if resource.mimeType == "application/pdf":
+        return DocumentBlockParam(source=Base64PdfSourceParam(data=resource.blob))
+    logger.warning(
+        "Unsupported embedded resource media type",
+        extra={"media_type": resource.mimeType},
+    )
+    return None
+
+
+def _convert_call_tool_result(
+    result: CallToolResult,
+) -> list[TextBlockParam | ImageBlockParam | DocumentBlockParam]:
+    _result: list[TextBlockParam | ImageBlockParam | DocumentBlockParam] = []
+    for block in result.content:
+        match block.type:
+            case "text":
+                _result.append(TextBlockParam(text=block.text))
+            case "image":
+                media_type = block.mimeType
+                if media_type not in IMAGE_MEDIA_TYPES_SUPPORTED:
+                    logger.warning(
+                        "Unsupported image media type",
+                        extra={"media_type": media_type},
+                    )
+                    continue
+                _result.append(
+                    ImageBlockParam(
+                        source=Base64ImageSourceParam(
+                            media_type=media_type,
+                            data=block.data,
+                        )
+                    )
+                )
+            case "resource":
+                converted = _convert_mcp_resource(block.resource)
+                if converted is not None:
+                    _result.append(converted)
+            case _:
+                logger.warning(
+                    "Unsupported block type",
+                    extra={"block_type": block.type},
+                )
+    return _result
+
+
 def _convert_to_content(
     result: ToolCallResult,
-) -> list[TextBlockParam | ImageBlockParam]:
+) -> list[TextBlockParam | ImageBlockParam | DocumentBlockParam]:
     if result is None:
         return []
 
     if isinstance(result, CallToolResult):
-        _result: list[TextBlockParam | ImageBlockParam] = []
-        for block in result.content:
-            match block.type:
-                case "text":
-                    _result.append(TextBlockParam(text=block.text))
-                case "image":
-                    media_type = block.mimeType
-                    if media_type not in IMAGE_MEDIA_TYPES_SUPPORTED:
-                        logger.warning(
-                            "Unsupported image media type",
-                            extra={"media_type": media_type},
-                        )
-                        continue
-                    _result.append(
-                        ImageBlockParam(
-                            source=Base64ImageSourceParam(
-                                media_type=media_type,
-                                data=block.data,
-                            )
-                        )
-                    )
-                case _:
-                    logger.warning(
-                        "Unsupported block type",
-                        extra={"block_type": block.type},
-                    )
-        return _result
+        return _convert_call_tool_result(result)
 
     if isinstance(result, str):
         return [TextBlockParam(text=result)]
@@ -95,6 +129,13 @@ def _convert_to_content(
             item
             for sublist in [_convert_to_content(item) for item in result]
             for item in sublist
+        ]
+
+    if isinstance(result, PdfSource):
+        return [
+            DocumentBlockParam(
+                source=Base64PdfSourceParam(data=result.to_base64()),
+            )
         ]
 
     if isinstance(result, BaseModel):

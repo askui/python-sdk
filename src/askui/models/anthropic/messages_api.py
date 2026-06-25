@@ -28,8 +28,10 @@ from askui.models.askui.retry_utils import (
 )
 from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     CacheControlEphemeralParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     TextBlockParam,
@@ -41,6 +43,7 @@ from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.image_utils import image_to_base64
+from askui.utils.pdf_utils import PdfSource
 
 
 def _is_retryable_error(exception: BaseException) -> bool:
@@ -96,6 +99,31 @@ def built_messages_for_get_and_locate(
                         source=Base64ImageSourceParam(
                             data=image_to_base64(scaled_image),
                             media_type="image/png",
+                        ),
+                    ),
+                    TextBlockParam(
+                        text=prompt,
+                    ),
+                ],
+            ),
+        )
+    ]
+
+
+def built_messages_for_get_pdf(
+    pdf_source: PdfSource, prompt: str
+) -> list[MessageParam]:
+    # Anthropic accepts a base64 PDF `document` block (no beta header); placing
+    # the document before the text follows Anthropic's PDF best practices.
+    return [
+        MessageParam(
+            role="user",
+            content=cast(
+                "list[ContentBlockParam]",
+                [
+                    DocumentBlockParam(
+                        source=Base64PdfSourceParam(
+                            data=pdf_source.to_base64(),
                         ),
                     ),
                     TextBlockParam(

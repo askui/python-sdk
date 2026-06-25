@@ -9,11 +9,13 @@ from .models import (
 from .openrouter.settings import ChatCompletionsCreateSettings, OpenRouterSettings
 from .shared.agent_message_param import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     CacheControlEphemeralParam,
     CitationCharLocationParam,
     CitationContentBlockLocationParam,
     CitationPageLocationParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     TextBlockParam,
@@ -28,12 +30,14 @@ from .types.geometry import Point, PointList
 __all__ = [
     "ActModel",
     "Base64ImageSourceParam",
+    "Base64PdfSourceParam",
     "CacheControlEphemeralParam",
     "ChatCompletionsCreateSettings",
     "CitationCharLocationParam",
     "CitationContentBlockLocationParam",
     "CitationPageLocationParam",
     "ContentBlockParam",
+    "DocumentBlockParam",
     "FallbackGetModel",
     "FallbackLocateModel",
     "GetModel",

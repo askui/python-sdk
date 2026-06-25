@@ -65,33 +65,43 @@ def _format_duration(seconds: float) -> str:
     return base
 
 
-def truncate_base64_images(content: Any) -> Any:
-    """Replace base64 image data with a placeholder to keep reports readable.
+def _base64_media_label(media_type: str) -> str:
+    """Return a human-friendly label for a base64 source's ``media_type``."""
+    if media_type == "application/pdf":
+        return "PDF"
+    if media_type.startswith("image/"):
+        return "image"
+    return media_type
+
+
+def truncate_base64_media(content: Any) -> Any:
+    """Replace base64 media data with a placeholder to keep reports readable.
 
     Walks the message content recursively and replaces the ``data`` field of
-    any base64 image source block (matching the schema of
-    ``Base64ImageSourceParam``, i.e. ``{"type": "base64", "data": "...",
-    "media_type": "image/..."}``) with a placeholder string. All other
-    content (including regular long strings like prompts or tool outputs)
-    is left untouched.
+    any base64 source block (matching the schema of ``Base64ImageSourceParam``
+    / ``Base64PdfSourceParam``, i.e. ``{"type": "base64", "data": "...",
+    "media_type": "..."}``) with a placeholder string. This covers screenshots,
+    images, and PDF documents alike, so large binary blobs never bloat the
+    report. All other content (including regular long strings like prompts or
+    tool outputs) is left untouched.
     """
     if isinstance(content, dict):
         content_dict: dict[Any, Any] = content
         media_type = content_dict.get("media_type")
         if (
             isinstance(media_type, str)
-            and media_type.startswith("image/")
             and content_dict.get("type") == "base64"
             and "data" in content_dict
         ):
-            return {**content_dict, "data": "[Base64 image data truncated]"}
+            label = _base64_media_label(media_type)
+            return {**content_dict, "data": f"[Base64 {label} data truncated]"}
         return {
-            key: truncate_base64_images(value) for key, value in content_dict.items()
+            key: truncate_base64_media(value) for key, value in content_dict.items()
         }
 
     if isinstance(content, list):
         content_list: list[Any] = content
-        return [truncate_base64_images(item) for item in content_list]
+        return [truncate_base64_media(item) for item in content_list]
 
     return content
 
@@ -414,7 +424,7 @@ class SimpleHtmlReporter(Reporter):
             self._start_time = datetime.now(tz=timezone.utc)
 
         _images = normalize_to_pil_images(image)
-        _content = truncate_base64_images(content)
+        _content = truncate_base64_media(content)
 
         timestamp = datetime.now(tz=timezone.utc)
         formatted_content = self._format_content(_content)

@@ -11,6 +11,7 @@ from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
     CacheControlEphemeralParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     TextBlockParam,
@@ -599,7 +600,9 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
             elif isinstance(block, ToolResultBlockParam) and isinstance(
                 block.content, list
             ):
-                new_nested: list[TextBlockParam | ImageBlockParam] = []
+                new_nested: list[
+                    TextBlockParam | ImageBlockParam | DocumentBlockParam
+                ] = []
                 for nested in block.content:
                     if (
                         stripped < max_to_strip

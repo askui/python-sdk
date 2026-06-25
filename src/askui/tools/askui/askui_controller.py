@@ -6,9 +6,11 @@ import sys
 import time
 import types
 import uuid
+from io import BytesIO
 from typing import Literal, Type
 
 import grpc
+from filetype import guess  # type: ignore[import-untyped]
 from google.protobuf.json_format import MessageToDict
 from PIL import Image
 from typing_extensions import Self, override
@@ -76,7 +78,7 @@ from askui.tools.askui.askui_ui_controller_grpc.generated.AgentOS_Send_Response_
     GetSystemInfoResponseModel,
 )
 from askui.utils.annotated_image import AnnotatedImage
-from askui.utils.image_utils import base64_to_image
+from askui.utils.pdf_utils import PdfSource
 
 from ..utils import process_exists, wait_for_port
 from .exceptions import (
@@ -1345,21 +1347,22 @@ class AskUiControllerClient(AgentOs):
         )
         return res.response.fileNames
 
-    def get_file(self, path: str) -> Image.Image | str:
+    def get_file(self, path: str) -> Image.Image | PdfSource | str:
         """
         Get the contents of a file at the given path on the device under
         automation.
 
         The controller returns the file as a Base64-encoded string, which is
         decoded and returned as `PIL.Image.Image` when the bytes can be opened
-        as an image (PNG, JPEG, BMP, GIF, WebP, TIFF, ...), or as `str` when
-        they decode cleanly as UTF-8 text.
+        as an image (PNG, JPEG, BMP, GIF, WebP, TIFF, ...), as `PdfSource` when
+        the bytes are a PDF document, or as `str` when they decode cleanly as
+        UTF-8 text.
 
         Args:
             path (str): The file path to read on the device under automation.
 
         Returns:
-            Image.Image | str: The decoded file contents.
+            Image.Image | PdfSource | str: The decoded file contents.
 
         Raises:
             DesktopAgentOsError: If the file cannot be read or the response is invalid.
@@ -1386,6 +1389,11 @@ class AskUiControllerClient(AgentOs):
             )
             return decoded
 
+        if isinstance(decoded, PdfSource):
+            detail = f"PDF ({len(decoded.to_bytes())} bytes)"
+            self._reporter.add_message("AgentOS", f"get_file({path}) -> {detail}")
+            return decoded
+
         detail = f"text ({len(decoded)} chars)"
         self._reporter.add_message("AgentOS", f"get_file({path}) -> {detail}")
         return decoded
@@ -1404,16 +1412,18 @@ class AskUiControllerClient(AgentOs):
         self._reporter.add_message("AgentOS", "remove_virtual_displays() -> done")
 
     @staticmethod
-    def _decode_file_payload(base64_data: str) -> Image.Image | str:
-        try:
-            return base64_to_image(base64_data)
-        except ValueError:
-            pass
+    def _decode_file_payload(base64_data: str) -> Image.Image | PdfSource | str:
         data = base64.b64decode(base64_data, validate=True)
+        kind = guess(data)
+        mime: str | None = kind.mime if kind is not None else None
+        if mime is not None and mime.startswith("image/"):
+            return Image.open(BytesIO(data))
+        if mime == "application/pdf":
+            return PdfSource(data)
         if b"\x00" not in data:
             try:
                 return data.decode("utf-8")
             except UnicodeDecodeError:
                 pass
-        message = "File contents are neither a supported image nor UTF-8 text"
+        message = "File contents are neither a supported image, PDF, nor UTF-8 text"
         raise DesktopAgentOsError(message)

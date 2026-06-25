@@ -16,6 +16,7 @@ from askui.models.shared.agent_message_param import (
     BetaRedactedThinkingBlock,
     BetaThinkingBlock,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     StopReason,
@@ -56,27 +57,41 @@ def _image_block_to_openai(block: ImageBlockParam) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": url}}
 
 
+def _document_block_to_openai(block: DocumentBlockParam) -> dict[str, Any]:
+    """Convert a `DocumentBlockParam` (PDF) to an OpenAI ``file`` content part."""
+    data_url = f"data:{block.source.media_type};base64,{block.source.data}"
+    return {
+        "type": "file",
+        "file": {
+            "filename": "document.pdf",
+            "file_data": data_url,
+        },
+    }
+
+
 def _serialize_tool_result_content(
-    content: str | list[TextBlockParam | ImageBlockParam],
+    content: str | list[TextBlockParam | ImageBlockParam | DocumentBlockParam],
 ) -> tuple[str, list[dict[str, Any]]]:
     """Serialize ``ToolResultBlockParam.content`` for OpenAI's ``tool`` role.
 
-    Returns the text portion as a string and any images as OpenAI content
-    parts (to be appended as a separate ``user`` message since the OpenAI
-    ``tool`` role only accepts string content).
+    Returns the text portion as a string and any images/documents as OpenAI
+    content parts (to be appended as a separate ``user`` message since the
+    OpenAI ``tool`` role only accepts string content).
     """
     if isinstance(content, str):
         return content, []
 
     text_parts: list[str] = []
-    image_parts: list[dict[str, Any]] = []
+    media_parts: list[dict[str, Any]] = []
     for block in content:
         if isinstance(block, TextBlockParam):
             text_parts.append(block.text)
-        else:
-            image_parts.append(_image_block_to_openai(block))
+        elif isinstance(block, ImageBlockParam):
+            media_parts.append(_image_block_to_openai(block))
+        elif isinstance(block, DocumentBlockParam):
+            media_parts.append(_document_block_to_openai(block))
 
-    return "\n".join(text_parts), image_parts
+    return "\n".join(text_parts), media_parts
 
 
 def _content_block_to_openai(block: ContentBlockParam) -> dict[str, Any] | None:
@@ -88,6 +103,8 @@ def _content_block_to_openai(block: ContentBlockParam) -> dict[str, Any] | None:
         return {"type": "text", "text": block.text}
     if isinstance(block, ImageBlockParam):
         return _image_block_to_openai(block)
+    if isinstance(block, DocumentBlockParam):
+        return _document_block_to_openai(block)
     if isinstance(block, (BetaThinkingBlock, BetaRedactedThinkingBlock)):
         return None
     return None
@@ -164,16 +181,16 @@ def _convert_user_message(
     """Convert a user message's content blocks to OpenAI format.
 
     ``ToolResultBlockParam`` blocks become ``tool`` role messages.
-    Images inside tool results are collected and appended as a separate
-    ``user`` message so the model can still see them.
+    Images and documents inside tool results are collected and appended as a
+    separate ``user`` message so the model can still see them.
     """
-    tool_result_images: list[dict[str, Any]] = []
+    tool_result_media: list[dict[str, Any]] = []
     content_parts: list[dict[str, Any]] = []
 
     for block in blocks:
         if isinstance(block, ToolResultBlockParam):
-            text_content, images = _serialize_tool_result_content(block.content)
-            tool_result_images.extend(images)
+            text_content, media = _serialize_tool_result_content(block.content)
+            tool_result_media.extend(media)
             result.append(
                 {
                     "role": "tool",
@@ -189,9 +206,9 @@ def _convert_user_message(
     if content_parts:
         result.append({"role": "user", "content": content_parts})
 
-    # Append images from tool results as a separate user message
-    if tool_result_images:
-        result.append({"role": "user", "content": tool_result_images})
+    # Append images/documents from tool results as a separate user message
+    if tool_result_media:
+        result.append({"role": "user", "content": tool_result_media})
 
 
 def _to_openai_tools(tools: ToolCollection) -> list[dict[str, Any]]:

@@ -21,8 +21,10 @@ from askui.models.openai.messages_api import (
 )
 from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     BetaRedactedThinkingBlock,
     BetaThinkingBlock,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     TextBlockParam,
@@ -114,7 +116,7 @@ class TestSerializeToolResultContent:
         assert images == []
 
     def test_text_blocks(self) -> None:
-        content: list[TextBlockParam | ImageBlockParam] = [
+        content: list[TextBlockParam | ImageBlockParam | DocumentBlockParam] = [
             TextBlockParam(text="line1"),
             TextBlockParam(text="line2"),
         ]
@@ -123,7 +125,7 @@ class TestSerializeToolResultContent:
         assert images == []
 
     def test_image_blocks_extracted(self) -> None:
-        content: list[TextBlockParam | ImageBlockParam] = [
+        content: list[TextBlockParam | ImageBlockParam | DocumentBlockParam] = [
             TextBlockParam(text="screenshot"),
             ImageBlockParam(
                 source=Base64ImageSourceParam(data="abc", media_type="image/png")
@@ -133,6 +135,17 @@ class TestSerializeToolResultContent:
         assert text == "screenshot"
         assert len(images) == 1
         assert images[0]["type"] == "image_url"
+
+    def test_document_blocks_become_file_parts(self) -> None:
+        content: list[TextBlockParam | ImageBlockParam | DocumentBlockParam] = [
+            TextBlockParam(text="report attached"),
+            DocumentBlockParam(source=Base64PdfSourceParam(data="cGRm")),
+        ]
+        text, media = _serialize_tool_result_content(content)
+        assert text == "report attached"
+        assert len(media) == 1
+        assert media[0]["type"] == "file"
+        assert media[0]["file"]["file_data"] == "data:application/pdf;base64,cGRm"
 
 
 class TestToOpenaiMessages:

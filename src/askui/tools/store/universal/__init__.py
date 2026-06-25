@@ -7,6 +7,7 @@ AndroidAgent, or any other agent type.
 from .get_current_time import GetCurrentTimeTool
 from .list_files_tool import ListFilesTool
 from .load_image_tool import LoadImageTool
+from .load_pdf_tool import LoadPdfTool
 from .print_to_console import PrintToConsoleTool
 from .read_from_file_tool import ReadFromFileTool
 from .wait_tool import WaitTool
@@ -24,4 +25,5 @@ __all__ = [
     "WaitWithProgressTool",
     "WriteToFileTool",
     "LoadImageTool",
+    "LoadPdfTool",
 ]
