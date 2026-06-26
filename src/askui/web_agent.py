@@ -76,6 +76,7 @@ class WebAgent(Agent):
             "act_tools",
             "callbacks",
             "truncation_strategy",
+            "download_dir",
         }
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
