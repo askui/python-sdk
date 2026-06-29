@@ -412,9 +412,7 @@ class TestFromOpenaiResponse:
                 }
             )
         ]
-        completion = _make_completion(
-            tool_calls=tool_calls, finish_reason="tool_calls"
-        )
+        completion = _make_completion(tool_calls=tool_calls, finish_reason="tool_calls")
         result = _from_openai_response(completion)
         assert isinstance(result.content, list)
         block = result.content[0]
@@ -429,9 +427,7 @@ class TestFromOpenaiResponse:
                 function=Function(name="screenshot", arguments="{}"),
             )
         ]
-        completion = _make_completion(
-            tool_calls=tool_calls, finish_reason="tool_calls"
-        )
+        completion = _make_completion(tool_calls=tool_calls, finish_reason="tool_calls")
         result = _from_openai_response(completion)
         assert isinstance(result.content, list)
         block = result.content[0]
