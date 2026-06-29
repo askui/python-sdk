@@ -81,6 +81,10 @@ class ToolUseBlockParam(BaseModel):
     type: Literal["tool_use"] = "tool_use"
     cache_control: CacheControlEphemeralParam | None = None
     visual_representation: str | None = None  # Visual hash for cache validation
+    # Provider-specific data echoed back on subsequent turns. Used by Gemini via
+    # the OpenAI-compatible API to carry `thought_signature` (required for tool
+    # calls to keep working across turns). Not part of the Anthropic API schema.
+    extra_content: dict[str, Any] | None = None
 
 
 class BetaThinkingBlock(BaseModel):
