@@ -183,6 +183,36 @@ class TestToOpenaiMessages:
         assert parts[0] == {"type": "text", "text": "What is this?"}
         assert parts[1]["type"] == "image_url"
 
+    def test_tool_call_extra_content_round_tripped(self) -> None:
+        messages = [
+            MessageParam(
+                role="assistant",
+                content=[
+                    ToolUseBlockParam(
+                        id="call_1",
+                        name="move_mouse",
+                        input={"x": 1, "y": 2},
+                        extra_content={"google": {"thought_signature": "sig-abc"}},
+                    ),
+                ],
+            )
+        ]
+        result = _to_openai_messages(messages)
+        tc = result[0]["tool_calls"][0]
+        assert tc["extra_content"] == {"google": {"thought_signature": "sig-abc"}}
+
+    def test_tool_call_without_extra_content_omits_key(self) -> None:
+        messages = [
+            MessageParam(
+                role="assistant",
+                content=[
+                    ToolUseBlockParam(id="call_1", name="screenshot", input={}),
+                ],
+            )
+        ]
+        result = _to_openai_messages(messages)
+        assert "extra_content" not in result[0]["tool_calls"][0]
+
     def test_assistant_message_with_tool_calls(self) -> None:
         messages = [
             MessageParam(
@@ -383,6 +413,43 @@ class TestFromOpenaiResponse:
         assert len(result.content) == 2
         assert isinstance(result.content[0], TextBlockParam)
         assert isinstance(result.content[1], ToolUseBlockParam)
+
+    def test_tool_call_extra_content_captured(self) -> None:
+        tool_calls = [
+            ChatCompletionMessageToolCall.model_validate(
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "move_mouse", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "sig-abc"}},
+                }
+            )
+        ]
+        completion = _make_completion(
+            tool_calls=tool_calls, finish_reason="tool_calls"
+        )
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        block = result.content[0]
+        assert isinstance(block, ToolUseBlockParam)
+        assert block.extra_content == {"google": {"thought_signature": "sig-abc"}}
+
+    def test_tool_call_without_extra_content_is_none(self) -> None:
+        tool_calls = [
+            ChatCompletionMessageToolCall(
+                id="call_1",
+                type="function",
+                function=Function(name="screenshot", arguments="{}"),
+            )
+        ]
+        completion = _make_completion(
+            tool_calls=tool_calls, finish_reason="tool_calls"
+        )
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        block = result.content[0]
+        assert isinstance(block, ToolUseBlockParam)
+        assert block.extra_content is None
 
     def test_usage_captured(self) -> None:
         completion = _make_completion(

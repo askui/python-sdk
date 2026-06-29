@@ -58,16 +58,18 @@ def from_content_block(block: ContentBlockParam) -> BetaContentBlockParam:
     """Convert an internal content block to an Anthropic API-compatible dict.
 
     Uses `model_dump()` to produce plain dicts compatible with Anthropic's
-    TypedDicts. Strips ``visual_representation`` from `ToolUseBlockParam`
-    as it is not accepted by the API.
+    TypedDicts. Strips ``visual_representation`` and ``extra_content`` from
+    `ToolUseBlockParam` as they are not accepted by the API.
     """
     if isinstance(block, ToolUseBlockParam):
-        # visual_representation is an internal field (perceptual hash for cache
-        # validation) that does not exist in the Anthropic API schema. Sending
-        # it would cause the API to reject the request with an unknown-field error.
+        # visual_representation (perceptual hash for cache validation) and
+        # extra_content (provider-specific data, e.g. Gemini thought signatures)
+        # are internal fields that do not exist in the Anthropic API schema.
+        # Sending them would cause the API to reject the request with an
+        # unknown-field error.
         return cast(
             "BetaContentBlockParam",
-            block.model_dump(exclude={"visual_representation"}),
+            block.model_dump(exclude={"visual_representation", "extra_content"}),
         )
     return cast("BetaContentBlockParam", block.model_dump())
 
