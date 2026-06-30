@@ -32,7 +32,7 @@ from askui.models.shared.agent_message_param import (
     ToolUseBlockParam,
 )
 from askui.models.shared.secrets import SecretVault
-from askui.tools import AgentOs
+from askui.tools import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.utils.image_utils import ImageSource, base64_to_image
 
@@ -350,23 +350,23 @@ class _McpToolAdapter(Tool):
 
 
 class ToolWithAgentOS(Tool):
-    """Tool base class  that has an AgentOs available."""
+    """Tool base class that has a ComputerAgentOS available."""
 
     def __init__(
         self,
         required_tags: list[str],
-        agent_os: AgentOs | AndroidAgentOs | None = None,
+        agent_os: ComputerAgentOS | AndroidAgentOs | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs, required_tags=required_tags)
-        self._agent_os: AgentOs | AndroidAgentOs | None = agent_os
+        self._agent_os: ComputerAgentOS | AndroidAgentOs | None = agent_os
 
     @property
-    def agent_os(self) -> AgentOs | AndroidAgentOs:
-        """Get the agent OS.
+    def agent_os(self) -> ComputerAgentOS | AndroidAgentOs:
+        """Get the AgentOS.
 
         Returns:
-            AgentOs | AndroidAgentOs: The agent OS instance.
+            ComputerAgentOS | AndroidAgentOs: The AgentOS instance.
         """
         if self._agent_os is None:
             msg = (
@@ -378,11 +378,11 @@ class ToolWithAgentOS(Tool):
         return self._agent_os
 
     @agent_os.setter
-    def agent_os(self, agent_os: AgentOs | AndroidAgentOs) -> None:
+    def agent_os(self, agent_os: ComputerAgentOS | AndroidAgentOs) -> None:
         self._agent_os = agent_os
 
     def is_agent_os_initialized(self) -> bool:
-        """Check if the agent OS is initialized."""
+        """Check if the AgentOS is initialized."""
         return self._agent_os is not None
 
 
@@ -461,12 +461,12 @@ class ToolCollection:
         tools: list[Tool] | None = None,
         mcp_client: McpClientProtocol | None = None,
         include: set[str] | None = None,
-        agent_os_list: list[AgentOs | AndroidAgentOs] | None = None,
+        agent_os_list: list[ComputerAgentOS | AndroidAgentOs] | None = None,
         secret_vault: SecretVault | None = None,
     ) -> None:
         self._mcp_client = mcp_client
         self._include = include
-        self._agent_os_list: list[AgentOs | AndroidAgentOs] = []
+        self._agent_os_list: list[ComputerAgentOS | AndroidAgentOs] = []
         self._tools: list[Tool] = tools or []
         self._secret_vault: SecretVault = secret_vault or SecretVault()
         if agent_os_list:
@@ -482,11 +482,11 @@ class ToolCollection:
     def secret_vault(self, secret_vault: SecretVault) -> None:
         self._secret_vault = secret_vault
 
-    def add_agent_os(self, agent_os: AgentOs | AndroidAgentOs) -> None:
-        """Add an agent OS to the collection.
+    def add_agent_os(self, agent_os: ComputerAgentOS | AndroidAgentOs) -> None:
+        """Add an AgentOS to the collection.
 
         Args:
-            agent_os (AgentOs | AndroidAgentOs): The agent OS instance to add.
+            agent_os (ComputerAgentOS | AndroidAgentOs): The AgentOS instance to add.
         """
         self._agent_os_list.append(agent_os)
 
@@ -546,12 +546,23 @@ class ToolCollection:
         """Reset the tools in the collection with new tools."""
         self._tools = tools or []
 
-    def get_agent_os_by_tags(self, tags: list[str]) -> AgentOs | AndroidAgentOs:
-        """Get an agent OS by tags."""
+    def get_agent_os_by_tags(
+        self, required_tags: list[str]
+    ) -> ComputerAgentOS | AndroidAgentOs:
+        """
+        Find the first registered AgentOS whose tags are a superset of
+        `required_tags`.
+
+        Every tag in `required_tags` must appear in the AgentOS's tags; the
+        AgentOS may declare additional tags beyond those.
+
+        Raises:
+            ValueError: when no registered AgentOS satisfies the required tags.
+        """
         for agent_os in self._agent_os_list:
-            if all(tag in agent_os.tags for tag in tags):
+            if all(required in agent_os.tags for required in required_tags):
                 return agent_os
-        msg = f"Agent OS with tags [{', '.join(tags)}] not found"
+        msg = f"No AgentOS satisfies required tags [{', '.join(required_tags)}]"
         raise ValueError(msg)
 
     def _initialize_tools(self) -> None:

@@ -68,7 +68,7 @@ Work with any agent type, no special dependencies required.
 
 #### Computer Tools (`computer/`)
 
-Require `AgentOs` and work with `ComputerAgent` for desktop automation.
+Require `ComputerAgentOS` and work with `ComputerAgent` for desktop automation.
 
 **Examples:**
 - `ComputerSaveScreenshotTool(base_dir)` - Save screenshots to disk
@@ -314,3 +314,122 @@ with ComputerAgent() as agent:
         tools=[GreetingTool()],
     )
 ```
+
+### Restricting a tool to one device type (computer or android)
+
+`GreetingTool` above subclasses `Tool` because it is pure logic and never touches a device. A tool that needs to drive a device should instead subclass one of the device-specific base classes:
+
+- `ComputerBaseTool` — gives the tool a typed `self.agent_os` (a `ComputerAgentOS`) and restricts it to **computer/desktop** targets.
+- `AndroidBaseTool` — gives the tool a typed `self.agent_os` (an `AndroidAgentOs`) and restricts it to **Android** targets.
+
+Both are importable from `askui.models.shared`.
+
+#### How the restriction works
+
+Every tool carries a list of `required_tags`, and every agent OS carries a list of `tags`. When `act()` starts, the SDK binds each tool to the **first registered agent OS whose `tags` contain all of the tool's `required_tags`**. The base classes set this up for you:
+
+| Base class | `required_tags` |
+|------------|-----------------|
+| `Tool` | `[]` — binds to any agent OS (or none) |
+| `ComputerBaseTool` | `["computer"]` |
+| `AndroidBaseTool` | `["android"]` |
+
+The agent OS implementations are tagged accordingly: desktop ones report `"computer"` and Android ones report `"android"` (the coordinate-scaling facades additionally add `"scaled_agent_os"`). So a `ComputerBaseTool` can never be bound to an Android device, and vice versa.
+
+You can also pass extra `required_tags` to narrow further, e.g. `super().__init__(..., required_tags=["scaled_agent_os"])` to require the scaling facade specifically.
+
+#### Example: a computer-only tool
+
+```python
+from askui.models.shared import ComputerBaseTool
+
+
+class ComputerScreenSizeTool(ComputerBaseTool):
+    """Reports the pixel size of the active computer screen.
+
+    Subclassing `ComputerBaseTool` tags this tool as `"computer"`, so it is
+    only ever bound to a computer (desktop) agent OS — never to an Android
+    device. `self.agent_os` is therefore a `ComputerAgentOS`.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="get_screen_size",
+            description="Return the width and height in pixels of the active computer screen.",
+            input_schema={"type": "object", "properties": {}},
+        )
+
+    def __call__(self) -> str:
+        screenshot = self.agent_os.screenshot()
+        return f"{screenshot.width}x{screenshot.height}"
+```
+
+#### Where this matters
+
+The restriction is enforced whenever more than one agent OS is registered for a single `act()` call — most notably with [`MultiDeviceAgent`](02_using_agents.md#multideviceagent), which registers both a computer and an Android agent OS:
+
+```python
+from askui import MultiDeviceAgent
+
+with MultiDeviceAgent(android_device_sn="emulator-5554") as agent:
+    agent.act(
+        "Read the screen size on the computer, then take a screenshot on the phone",
+        # ComputerScreenSizeTool is given only to the computer agent OS;
+        # an AndroidBaseTool would be given only to the Android device.
+        tools=[ComputerScreenSizeTool()],
+    )
+```
+
+#### Pinning a tool to a specific machine (auto-switch)
+
+The tag-based restriction is by device *type* (computer vs Android), not by an individual target machine. When you drive [multiple computer targets](13_multi_target_computers.md) from one agent, every `ComputerBaseTool` shares the same computer agent OS and runs against whichever target is currently *active*.
+
+To bind a tool to one specific machine, have it **auto-switch** to that target inside `__call__`. `self.agent_os.temporary_select(computer_id)` activates the given target for the duration of the block and restores the previously active target on exit (even if the body raises), so the tool always acts on its machine without disturbing the rest of the run:
+
+```python
+from askui.models.shared import ComputerBaseTool
+
+
+class ScreenSizeOfMachineTool(ComputerBaseTool):
+    """Reports the screen size of one specific computer target.
+
+    The tool is bound to a `computer_id` and auto-switches to that target for
+    the duration of the call, regardless of which target is currently active.
+    """
+
+    def __init__(self, computer_id: str) -> None:
+        super().__init__(
+            name="get_screen_size_of_machine",
+            description="Return the screen size of the machine this tool is bound to.",
+            input_schema={"type": "object", "properties": {}},
+        )
+        self._computer_id = computer_id
+
+    def __call__(self) -> str:
+        with self.agent_os.temporary_select(self._computer_id):
+            screenshot = self.agent_os.screenshot()
+            return f"{screenshot.width}x{screenshot.height}"
+```
+
+```python
+from askui import ComputerAgent
+from askui.tools.askui import LocalComputerTarget, RemoteComputerTarget
+
+with ComputerAgent(
+    agent_os_target_computers=[
+        LocalComputerTarget(computer_id="local-box"),
+        RemoteComputerTarget(
+            address="192.168.1.42:26000",
+            description="Remote box",
+            computer_id="remote-box",
+        ),
+    ],
+) as agent:
+    # This tool always measures "remote-box", even though "local-box" is active.
+    agent.act(
+        "Report the screen size of the remote machine",
+        tools=[ScreenSizeOfMachineTool(computer_id="remote-box")],
+    )
+```
+
+> **Note:** the `computer_id` you pass must match one registered via `agent_os_target_computers` — `temporary_select` raises if no such target exists.

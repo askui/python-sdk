@@ -125,13 +125,12 @@ models.register("my-model", custom_model_instance)
 
 ### Agent OS Abstraction
 
-`AgentOs` provides an abstraction layer for OS-level operations:
+`ComputerAgentOS` provides an abstraction layer for OS-level operations:
 
 ```
-AgentOs (Abstract Interface)
-    ├── AskUiControllerClient (gRPC to AskUI Agent OS - primary)
+ComputerAgentOS (Abstract Interface)
+    ├── MultiComputerTargetAgentOS (gRPC to AskUI Agent OS - primary)
     ├── PlaywrightAgentOs (Web browser automation)
-    └── AndroidAgentOs (Android ADB)
 ```
 
 ### Locator System
@@ -175,7 +174,7 @@ Tools are auto-discovered and can be dynamically loaded via MCP configurations.
 - `src/askui/prompts/` - System prompts for different models
 
 ### Tools & OS
-- `src/askui/tools/agent_os.py` - Abstract `AgentOs` interface
+- `src/askui/tools/agent_os.py` - Abstract `ComputerAgentOS` interface
 - `src/askui/tools/askui/` - gRPC client for AskUI Agent OS
 - `src/askui/tools/android/` - Android-specific tools
 - `src/askui/tools/playwright/` - Web automation tools
@@ -247,7 +246,7 @@ When writing or updating documentation in `docs/`:
 ## Important Patterns
 
 ### Composition over Inheritance
-- `AgentToolbox` wraps `AgentOs` implementations
+- `AgentToolbox` wraps `ComputerAgentOS` implementations
 - `ModelRouter` composes multiple model providers
 - `CompositeReporter` aggregates multiple reporters
 
@@ -261,7 +260,7 @@ When writing or updating documentation in `docs/`:
 - Retry strategies with exponential backoff
 
 ### Adapter Pattern
-- `AgentOs` abstraction bridges OS implementations (gRPC, Playwright, ADB)
+- `ComputerAgentOS` abstraction bridges OS implementations (gRPC, Playwright, ADB)
 - `ModelFacade` adapts models to `ActModel`/`GetModel`/`LocateModel` interfaces
 
 ### Dependency Injection
@@ -299,13 +298,13 @@ When writing or updating documentation in `docs/`:
 ### Adding Custom Tools
 1. Implement `Tool` protocol in `models/shared/tools.py`
 2. Register in appropriate MCP server (`api/mcp_servers/{type}.py`)
-3. Use `@auto_inject_agent_os` for AgentOs dependency
+3. Use `@auto_inject_agent_os` for ComputerAgentOS dependency
 4. Follow Pydantic schema validation
 
 ### Adding New Agent Types
 1. Inherit from `Agent`
 2. Implement required abstract methods
-3. Provide appropriate `AgentOs` implementation
+3. Provide appropriate `ComputerAgentOS` implementation
 4. Register in agent factory if needed
 
 ## Performance & Caching

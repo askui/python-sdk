@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from askui.models.shared.tool_tags import ToolTags
@@ -7,7 +8,10 @@ from askui.tools.android.agent_os import ANDROID_KEY, AndroidAgentOs, AndroidDis
 from askui.tools.coordinate_scaler import CoordinateScaler
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from PIL import Image
+    from typing_extensions import Self
 
     from askui.models.shared.coordinate_space import VlmCoordinateSpace
     from askui.models.shared.image_scaler import ImageScaler
@@ -119,6 +123,15 @@ class AndroidAgentOsFacade(AndroidAgentOs):
     def set_device_by_serial_number(self, device_sn: str) -> None:
         self._agent_os.set_device_by_serial_number(device_sn)
         self._scaler.real_screen_resolution = None
+
+    @contextmanager
+    def temporary_select(self, device_sn: str) -> Iterator[Self]:
+        with self._agent_os.temporary_select(device_sn):
+            self._scaler.real_screen_resolution = None
+            try:
+                yield self
+            finally:
+                self._scaler.real_screen_resolution = None
 
     def get_connected_devices_serial_numbers(self) -> list[str]:
         return self._agent_os.get_connected_devices_serial_numbers()

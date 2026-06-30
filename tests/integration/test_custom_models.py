@@ -26,7 +26,7 @@ from askui.models.shared.agent_message_param import (
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.settings import GetSettings, LocateSettings
 from askui.models.shared.tools import ToolCollection
-from askui.tools.toolbox import AgentToolbox
+from askui.tools.agent_os import ComputerAgentOS
 from askui.utils.image_utils import ImageSource
 from askui.utils.source_utils import Source
 
@@ -148,12 +148,11 @@ class TestCustomProviders:
     def test_inject_and_use_custom_vlm_provider(
         self,
         vlm_provider: SimpleVlmProvider,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
     ) -> None:
         """Test injecting and using a custom VLM provider."""
         with ComputerAgent(
             settings=AgentSettings(vlm_provider=vlm_provider),
-            tools=agent_toolbox_mock,
         ) as agent:
             agent.act("test goal")
 
@@ -175,12 +174,11 @@ class TestCustomProviders:
     def test_inject_and_use_custom_image_qa_provider(
         self,
         image_qa_provider: SimpleImageQAProvider,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
     ) -> None:
         """Test injecting and using a custom image Q&A provider."""
         with ComputerAgent(
             settings=AgentSettings(image_qa_provider=image_qa_provider),
-            tools=agent_toolbox_mock,
         ) as agent:
             result = agent.get("test query")
 
@@ -190,13 +188,12 @@ class TestCustomProviders:
     def test_inject_and_use_custom_image_qa_provider_with_pdf(
         self,
         image_qa_provider: SimpleImageQAProvider,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
         path_fixtures_dummy_pdf: pathlib.Path,
     ) -> None:
         """Test injecting and using a custom image Q&A provider with a PDF."""
         with ComputerAgent(
             settings=AgentSettings(image_qa_provider=image_qa_provider),
-            tools=agent_toolbox_mock,
         ) as agent:
             result = agent.get("test query", source=path_fixtures_dummy_pdf)
 
@@ -206,12 +203,11 @@ class TestCustomProviders:
     def test_inject_and_use_custom_detection_provider(
         self,
         detection_provider: SimpleDetectionProvider,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
     ) -> None:
         """Test injecting and using a custom detection provider."""
         with ComputerAgent(
             settings=AgentSettings(detection_provider=detection_provider),
-            tools=agent_toolbox_mock,
         ) as agent:
             agent.click("test element")
 
@@ -222,7 +218,7 @@ class TestCustomProviders:
         vlm_provider: SimpleVlmProvider,
         image_qa_provider: SimpleImageQAProvider,
         detection_provider: SimpleDetectionProvider,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
     ) -> None:
         """Test injecting all custom providers at once."""
         with ComputerAgent(
@@ -231,7 +227,6 @@ class TestCustomProviders:
                 image_qa_provider=image_qa_provider,
                 detection_provider=detection_provider,
             ),
-            tools=agent_toolbox_mock,
         ) as agent:
             agent.act("test goal")
             result = agent.get("test query")
@@ -258,7 +253,7 @@ class TestCustomProviders:
     def test_use_response_schema_with_custom_image_qa_provider(
         self,
         image_qa_provider: SimpleImageQAProvider,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
     ) -> None:
         """Test using a response schema with a custom image Q&A provider."""
         response = SimpleResponseSchema(value="test value")
@@ -266,7 +261,6 @@ class TestCustomProviders:
 
         with ComputerAgent(
             settings=AgentSettings(image_qa_provider=image_qa_provider),
-            tools=agent_toolbox_mock,
         ) as agent:
             result = agent.get("test query", response_schema=SimpleResponseSchema)
 
@@ -276,8 +270,8 @@ class TestCustomProviders:
 
     def test_defaults_to_built_in_providers_when_not_provided(
         self,
-        agent_toolbox_mock: AgentToolbox,
+        agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG002
     ) -> None:
         """Test agent uses built-in defaults when custom ones not provided."""
-        with ComputerAgent(tools=agent_toolbox_mock) as agent:
+        with ComputerAgent() as agent:
             assert agent is not None

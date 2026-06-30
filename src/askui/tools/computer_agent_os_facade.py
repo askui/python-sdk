@@ -1,12 +1,15 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from PIL import Image
+from typing_extensions import Self
 
 from askui.models.shared.coordinate_space import VlmCoordinateSpace
 from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import (
-    AgentOs,
+    ComputerAgentOS,
     Coordinate,
     Display,
     DisplaysListResponse,
@@ -19,6 +22,9 @@ from askui.tools.askui.askui_controller import RenderObjectStyle  # noqa: TC001
 from askui.tools.coordinate_scaler import CoordinateScaler
 
 if TYPE_CHECKING:
+    from askui.tools.askui.agent_os_target_computer import (
+        ComputerTarget,
+    )
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
         Controller_V1_pb2 as controller_v1_pbs,
     )
@@ -29,8 +35,8 @@ if TYPE_CHECKING:
     )
 
 
-class ComputerAgentOsFacade(AgentOs):
-    """Facade for `AgentOs` that adds coordinate scaling.
+class ComputerAgentOsFacade(ComputerAgentOS):
+    """Facade for `ComputerAgentOS` that adds coordinate scaling.
 
     Screenshots are scaled using the provider's image scaler so that the
     AI model sees an optimally sized image.  Coordinate-based inputs
@@ -38,14 +44,14 @@ class ComputerAgentOsFacade(AgentOs):
     to the underlying agent OS.
 
     Args:
-        agent_os (`AgentOs`): The real agent OS to wrap.
+        agent_os (`ComputerAgentOS`): The real agent OS to wrap.
         coordinate_space (`VlmCoordinateSpace`): Coordinate grid the model uses.
         image_scaler (`ImageScaler`): Callable to preprocess screenshots.
     """
 
     def __init__(
         self,
-        agent_os: AgentOs,
+        agent_os: ComputerAgentOS,
         coordinate_space: VlmCoordinateSpace,
         image_scaler: ImageScaler,
     ) -> None:
@@ -323,6 +329,39 @@ class ComputerAgentOsFacade(AgentOs):
             window_id (int): The ID of the window to set as active.
         """
         self._agent_os.set_window_in_focus(process_id, window_id)
+
+    def add_agent_os_target_computer(
+        self, agent_os_target_computer: "ComputerTarget"
+    ) -> "ComputerTarget":
+        return self._agent_os.add_agent_os_target_computer(agent_os_target_computer)
+
+    def reset_agent_os_target_computers(
+        self,
+        agent_os_target_computers: "list[ComputerTarget] | None" = None,
+    ) -> None:
+        self._agent_os.reset_agent_os_target_computers(agent_os_target_computers)
+
+    def describe_agent_os_target_computers(self) -> list[str]:
+        return self._agent_os.describe_agent_os_target_computers()
+
+    def get_current_computer_target_id(self, report: bool = True) -> str:
+        return self._agent_os.get_current_computer_target_id(report=report)
+
+    def switch_agent_os_target_computer(self, computer_id: str) -> "ComputerTarget":
+        agent_os_target_computer = self._agent_os.switch_agent_os_target_computer(
+            computer_id
+        )
+        self._scaler.real_screen_resolution = None
+        return agent_os_target_computer
+
+    @contextmanager
+    def temporary_select(self, computer_id: str) -> Iterator[Self]:
+        with self._agent_os.temporary_select(computer_id):
+            self._scaler.real_screen_resolution = None
+            try:
+                yield self
+            finally:
+                self._scaler.real_screen_resolution = None
 
     def get_file_names(self, absolute_directory_path: str) -> list[str]:
         """

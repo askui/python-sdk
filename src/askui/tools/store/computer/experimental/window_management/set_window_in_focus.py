@@ -1,5 +1,5 @@
 from askui.models.shared import ComputerBaseTool
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 
 
 class ComputerSetWindowInFocusTool(ComputerBaseTool):
@@ -9,7 +9,7 @@ class ComputerSetWindowInFocusTool(ComputerBaseTool):
     before performing automation tasks.
     """
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="set_window_in_focus_tool",
             description="""

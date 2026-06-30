@@ -18,11 +18,13 @@ from askui.prompts.act_prompts import (
     create_computer_agent_prompt,
 )
 from askui.tools.computer import (
+    ComputerGetCurrentComputerTargetIdTool,
     ComputerGetMousePositionTool,
     ComputerGetSystemInfoTool,
     ComputerKeyboardPressedTool,
     ComputerKeyboardReleaseTool,
     ComputerKeyboardTapTool,
+    ComputerListAgentOsTargetComputersTool,
     ComputerListDisplaysTool,
     ComputerMouseClickTool,
     ComputerMouseHoldDownTool,
@@ -32,6 +34,7 @@ from askui.tools.computer import (
     ComputerRetrieveActiveDisplayTool,
     ComputerScreenshotTool,
     ComputerSetActiveDisplayTool,
+    ComputerSwitchAgentOsTargetComputerTool,
     ComputerTypeTool,
 )
 from askui.tools.exception_tool import ExceptionTool
@@ -39,7 +42,7 @@ from askui.tools.exception_tool import ExceptionTool
 from .reporting import CompositeReporter, Reporter
 from .retry import Retry
 from .tools import AgentToolbox, ComputerAgentOsFacade, ModifierKey, PcKey
-from .tools.askui import AskUiControllerClient
+from .tools.askui import ComputerTarget, MultiComputerTargetAgentOS
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +54,30 @@ class ComputerAgent(Agent):
     This agent can perform various UI interactions like clicking, typing, scrolling, and more.
     It uses computer vision models to locate UI elements and execute actions on them.
 
+    A single `ComputerAgent` can drive **one or more machines** through the
+    `agent_os_target_computers` argument. Each entry is an Agent OS target
+    computer (local subprocess or remote gRPC endpoint) identified by a stable
+    `computer_id`. At any moment one target is *active* and receives all
+    explicit calls (`click`, `type`, `keyboard`, ...). The active target can be
+    changed at runtime via
+    `agent.tools.os.switch_agent_os_target_computer(computer_id)` or scoped to a
+    block using `agent.tools.os.temporary_select(computer_id)`. The `act()`
+    model is also given list/switch/get-current tools so it can orchestrate
+    work across machines on its own (e.g. read something on one computer and
+    re-enter it on another).
+
     Args:
-        display (int, optional): The display number to use for screen interactions. Defaults to `1`.
+        display (int, optional): The display number to use for screen interactions on the default local target. Ignored when `agent_os_target_computers` is provided. Defaults to `1`.
         reporters (list[Reporter] | None, optional): List of reporter instances for logging and reporting. If `None`, an empty list is used.
-        tools (AgentToolbox | None, optional): Custom toolbox instance. If `None`, a default one will be created with `AskUiControllerClient`.
+        agent_os_target_computers (list[ComputerTarget] | None, optional):
+            Target computers the agent can route actions to. May mix one
+            `LocalComputerTarget` (managing a controller subprocess on this
+            machine) with any number of `RemoteComputerTarget`s pointing at
+            controllers already running on other machines. Constraints: at
+            least one target, at most one local, and remote `address`es plus
+            all `computer_id`s must be unique. The first entry becomes the
+            initial active target. Defaults to a single local target bound to
+            `display`.
         settings (AgentSettings | None, optional): Provider-based model settings. If `None`, uses the default AskUI model stack.
         retry (Retry, optional): The retry instance to use for retrying failed actions. Defaults to `ConfigurableRetry` with exponential backoff. Currently only supported for `locate()` method.
         act_tools (list[Tool] | None, optional): Additional tools to make available for
@@ -69,6 +92,8 @@ class ComputerAgent(Agent):
             to the model; on-screen secrets cannot currently be hidden.
 
     Example:
+        Single local machine (the default):
+
         ```python
         from askui import ComputerAgent
 
@@ -76,6 +101,36 @@ class ComputerAgent(Agent):
             agent.click("Submit button")
             agent.type("Hello World")
             agent.act("Open settings menu")
+        ```
+
+    Example:
+        Research on one machine and write up the findings on another. The
+        first target in the list is the active one; `temporary_select`
+        re-routes a block of explicit calls and restores the previous
+        active target on exit.
+
+        ```python
+        from askui import ComputerAgent
+        from askui.tools.askui import LocalComputerTarget, RemoteComputerTarget
+
+        with ComputerAgent(
+            agent_os_target_computers=[
+                LocalComputerTarget(computer_id="research-box"),
+                RemoteComputerTarget(
+                    address="192.168.1.42:26000",
+                    description="Writer box with a text editor open",
+                    computer_id="writer-box",
+                ),
+            ],
+        ) as agent:
+            agent.act(
+                "On research-box, open a browser, google 'askui', and read "
+                "the top results to gather key facts about what AskUI is, "
+                "what it does, and notable features. Then switch to "
+                "writer-box and write a Markdown document titled "
+                "'AskUI Findings' summarizing those facts as a bulleted "
+                "list in the open text editor."
+            )
         ```
 
     Example (optional tools for `act()`):
@@ -102,11 +157,11 @@ class ComputerAgent(Agent):
     @telemetry.record_call(
         exclude={
             "reporters",
-            "tools",
             "settings",
             "act_tools",
             "callbacks",
             "truncation_strategy",
+            "agent_os_target_computers",
             "secrets",
         }
     )
@@ -115,7 +170,7 @@ class ComputerAgent(Agent):
         self,
         display: Annotated[int, Field(ge=1)] = 1,
         reporters: list[Reporter] | None = None,
-        tools: AgentToolbox | None = None,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
         settings: AgentSettings | None = None,
         retry: Retry | None = None,
         act_tools: list[Tool] | None = None,
@@ -124,10 +179,11 @@ class ComputerAgent(Agent):
         secrets: list[Secret] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
-        self.tools = tools or AgentToolbox(
-            agent_os=AskUiControllerClient(
+        self.tools = AgentToolbox(
+            agent_os=MultiComputerTargetAgentOS(
                 display=display,
                 reporter=reporter,
+                agent_os_target_computers=agent_os_target_computers,
             )
         )
         super().__init__(
@@ -515,8 +571,8 @@ class ComputerAgent(Agent):
 
             with ComputerAgent() as agent:
                 # Use for Windows
-                agent.cli(r'start "" "C:\Program Files\VideoLAN\VLC\vlc.exe"') # Start in VLC non-blocking
-                agent.cli(r'"C:\Program Files\VideoLAN\VLC\vlc.exe"') # Start in VLC blocking
+                agent.cli(r'start "" "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"') # Start in VLC non-blocking
+                agent.cli(r'"C:\\Program Files\\VideoLAN\\VLC\\vlc.exe"') # Start in VLC blocking
 
                 # Mac
                 agent.cli("open -a chrome")  # Open Chrome non-blocking for mac
@@ -556,6 +612,9 @@ class ComputerAgent(Agent):
             ComputerListDisplaysTool(),
             ComputerRetrieveActiveDisplayTool(),
             ComputerSetActiveDisplayTool(),
+            ComputerListAgentOsTargetComputersTool(),
+            ComputerSwitchAgentOsTargetComputerTool(),
+            ComputerGetCurrentComputerTargetIdTool(),
         ]
 
 

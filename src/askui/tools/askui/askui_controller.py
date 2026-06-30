@@ -1,11 +1,8 @@
 import base64
-import logging
-import pathlib
-import subprocess
-import sys
 import time
 import types
-import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Literal, Type
 
 import grpc
@@ -16,17 +13,17 @@ from typing_extensions import Self, override
 from askui.container import telemetry
 from askui.reporting import NULL_REPORTER, Reporter
 from askui.tools.agent_os import (
-    AgentOs,
+    ComputerAgentOS,
     Coordinate,
     Display,
     DisplaysListResponse,
     ModifierKey,
     PcKey,
 )
-from askui.tools.askui.askui_controller_client_settings import (
-    AskUiControllerClientSettings,
+from askui.tools.askui.agent_os_target_computer import (
+    ComputerTarget,
+    LocalComputerTarget,
 )
-from askui.tools.askui.askui_controller_settings import AskUiControllerSettings
 from askui.tools.askui.askui_ui_controller_grpc.desktop_agent_os_error import (
     DesktopAgentOsError,
 )
@@ -75,167 +72,224 @@ from askui.tools.askui.askui_ui_controller_grpc.generated.AgentOS_Send_Response_
     GetSystemInfoResponse,
     GetSystemInfoResponseModel,
 )
+from askui.tools.askui.computer_target_pool import (
+    ComputerTargetPool,
+)
 from askui.utils.annotated_image import AnnotatedImage
 from askui.utils.image_utils import base64_to_image
 
-from ..utils import process_exists, wait_for_port
 from .exceptions import (
     AskUiControllerError,
     AskUiControllerInvalidCommandError,
     AskUiControllerOperationTimeoutError,
 )
 
-logger = logging.getLogger(__name__)
 
-
-class AskUiControllerServer:
+class MultiComputerTargetAgentOS(ComputerAgentOS):
     """
-    Concrete implementation of `ControllerServer` for managing the AskUI Remote Device
-    Controller process.
-    Handles process discovery, startup, and shutdown for the native controller binary.
+    Implementation of `ComputerAgentOS` that communicates with one or more
+    computer targets (AskUI Remote Device Controller processes) via gRPC.
+
+    A client is configured with a non-empty list of `agent_os_target_computers`
+    (at most one local, the rest remote with unique addresses). `connect()` opens
+    a gRPC channel and session for *every* registered target. Exactly one target
+    is *active* at a time; agent-os actions are routed to its connection.
+    `disconnect()` closes every open connection and stops only those local
+    processes that were started by this client (i.e. `is_local` and not
+    `is_service` at connect time).
+
+    Use `add_agent_os_target_computer` to register additional targets (which
+    auto-connect if the client is currently connected),
+    `switch_agent_os_target_computer` to change the active one,
+    `describe_agent_os_target_computers` to inspect the registered targets, and
+    `reset_agent_os_target_computers` to clear or replace the list.
 
     Args:
-        settings (AskUiControllerSettings | None, optional): Settings for the AskUI.
-    """
-
-    def __init__(self, settings: AskUiControllerSettings | None = None) -> None:
-        self._process: subprocess.Popen[bytes] | None = None
-        self._settings = settings or AskUiControllerSettings()
-
-    def _start_process(
-        self,
-        path: pathlib.Path,
-        args: str | None = None,
-    ) -> None:
-        commands = [str(path)]
-        if args:
-            commands.extend(args.split())
-        if not logger.isEnabledFor(logging.DEBUG):
-            self._process = subprocess.Popen(
-                commands, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-        else:
-            self._process = subprocess.Popen(commands)
-        wait_for_port(23000)
-
-    def start(self, clean_up: bool = False) -> None:
-        """
-        Start the controller process.
-
-        Args:
-            clean_up (bool, optional): Whether to clean up existing processes
-                (only on Windows) before starting. Defaults to `False`.
-        """
-        if (
-            sys.platform == "win32"
-            and clean_up
-            and process_exists("AskuiRemoteDeviceController.exe")
-        ):
-            self.clean_up()
-        logger.debug(
-            "Starting AskUI Remote Device Controller",
-            extra={"path": str(self._settings.controller_path)},
-        )
-        self._start_process(
-            self._settings.controller_path, self._settings.controller_args
-        )
-        time.sleep(0.5)
-
-    def clean_up(self) -> None:
-        subprocess.run("taskkill.exe /IM AskUI*")
-        time.sleep(0.1)
-
-    def stop(self, force: bool = False) -> None:
-        """
-        Stop the controller process.
-
-        Args:
-            force (bool, optional): Whether to forcefully terminate the process.
-                Defaults to `False`.
-        """
-        if self._process is None:
-            return  # Nothing to stop
-
-        try:
-            if force:
-                self._process.kill()
-                if sys.platform == "win32":
-                    self.clean_up()
-            else:
-                self._process.terminate()
-        except Exception:  # noqa: BLE001 - We want to catch all other exceptions here
-            logger.exception("Controller error")
-        finally:
-            self._process = None
-
-
-class AskUiControllerClient(AgentOs):
-    """
-    Implementation of `AgentOs` that communicates with the AskUI Remote Device
-    Controller via gRPC.
-
-    Args:
-        reporter (Reporter): Reporter used for reporting with the `"AgentOs"`.
+        reporter (Reporter): Reporter used for reporting with the `"AgentOS"`.
         display (int, optional): Display number to use. Defaults to `1`.
-        controller_server (AskUiControllerServer | None, optional): Custom controller
-            server. Defaults to `ControllerServer`.
+        agent_os_target_computers (list[ComputerTarget] | None, optional):
+            Computer targets to register. Must be non-empty if provided, contain
+            at most one local target, and have unique addresses across remote
+            targets. If `None` (default), a single `LocalComputerTarget`
+            with default settings is registered.
     """
 
-    @telemetry.record_call(exclude={"reporter", "controller_server"})
+    _REPORTER_SOURCE = "AgentOS"
+
+    @telemetry.record_call(exclude={"reporter", "agent_os_target_computers"})
     def __init__(
         self,
         reporter: Reporter = NULL_REPORTER,
         display: int = 1,
-        controller_server: AskUiControllerServer | None = None,
-        settings: AskUiControllerClientSettings | None = None,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
     ) -> None:
-        self._stub: controller_v1.ControllerAPIStub | None = None
-        self._channel: grpc.Channel | None = None
-        self._session_info: controller_v1_pbs.SessionInfo | None = None
+        if not agent_os_target_computers:
+            agent_os_target_computers = [LocalComputerTarget(display=display)]
+
         self._pre_action_wait = 0
         self._post_action_wait = 0.05
         self._max_retries = 10
-        self._display = display
         self._reporter = reporter
-        self._controller_server = controller_server or AskUiControllerServer()
-        self._session_guid = "{" + str(uuid.uuid4()) + "}"
-        self._settings = settings or AskUiControllerClientSettings()
+        self._manager = ComputerTargetPool(
+            agent_os_target_computers=agent_os_target_computers
+        )
+
+    @property
+    def agent_os_target_computer_manager(self) -> ComputerTargetPool:
+        """The underlying target-computer manager."""
+        return self._manager
+
+    @property
+    def is_connected(self) -> bool:
+        """`True` when at least one target-computer connection is open."""
+        return self._manager.is_connected
+
+    def _require_active_agent_os_target_computer(self) -> ComputerTarget:
+        return self._manager.require_active()
+
+    @property
+    def _session_info(self) -> controller_v1_pbs.SessionInfo:
+        return self._manager.active_connection().session_info
+
+    @telemetry.record_call(exclude={"agent_os_target_computer"})
+    @override
+    def add_agent_os_target_computer(
+        self, agent_os_target_computer: ComputerTarget
+    ) -> ComputerTarget:
+        """
+        Register an already-constructed target computer. Auto-connects if the
+        client is currently connected.
+        """
+        self._reporter.add_message(
+            self._REPORTER_SOURCE,
+            f"add_agent_os_target_computer({agent_os_target_computer!r})",
+        )
+        self._manager.add(agent_os_target_computer)
+        return agent_os_target_computer
+
+    @telemetry.record_call(exclude={"agent_os_target_computers"})
+    @override
+    def reset_agent_os_target_computers(
+        self,
+        agent_os_target_computers: list[ComputerTarget] | None = None,
+    ) -> None:
+        """
+        Disconnect (if connected) and replace the target computer list.
+
+        Args:
+            agent_os_target_computers (list[ComputerTarget] | None, optional):
+                New list of target computers to register after the reset. If
+                `None`, the list is left empty and a subsequent `connect()` will
+                fail until at least one target has been registered again. Same
+                validation rules as the constructor (at most one local, unique
+                remote addresses).
+        """
+        self._reporter.add_message(
+            self._REPORTER_SOURCE,
+            f"reset_agent_os_target_computers({agent_os_target_computers!r})",
+        )
+        was_connected = self.is_connected
+        if was_connected:
+            self.disconnect()
+        self._manager.reset()
+        if agent_os_target_computers is not None:
+            for agent_os_target_computer in agent_os_target_computers:
+                self._manager.add(agent_os_target_computer)
+            if was_connected:
+                self.connect()
+
+    @telemetry.record_call()
+    @override
+    def describe_agent_os_target_computers(self) -> list[str]:
+        """Return the `repr()` string of every registered target computer."""
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, "describe_agent_os_target_computers()"
+        )
+        agent_os_target_computer_reprs = self._manager.describe()
+        self._reporter.add_message(
+            self._REPORTER_SOURCE,
+            "describe_agent_os_target_computers() -> "
+            f"{agent_os_target_computer_reprs!r}",
+        )
+        return agent_os_target_computer_reprs
+
+    @telemetry.record_call()
+    @override
+    def get_current_computer_target_id(self, report: bool = True) -> str:
+        """Return the `computer_id` of the currently active Agent OS target computer."""
+        if report:
+            self._reporter.add_message(
+                self._REPORTER_SOURCE, "get_current_computer_target_id()"
+            )
+        computer_id = self._require_active_agent_os_target_computer().computer_id
+        if report:
+            self._reporter.add_message(
+                self._REPORTER_SOURCE,
+                f"get_current_computer_target_id() -> {computer_id!r}",
+            )
+        return computer_id
+
+    @telemetry.record_call()
+    @override
+    def switch_agent_os_target_computer(self, computer_id: str) -> ComputerTarget:
+        """
+        Switch the active target computer by its `computer_id` (the user-supplied
+        identifier; defaults to the target's `session_guid` when none was supplied
+        at construction time).
+
+        Connections to all registered targets stay open across switches; this just
+        changes which connection routes future agent-os actions. If the target was
+        added after `connect()` and isn't connected yet, it is connected on switch.
+
+        Args:
+            computer_id (str): The computer id of the target to switch to.
+
+        Returns:
+            ComputerTarget: The newly active target computer.
+        """
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"switch_agent_os_target_computer({computer_id!r})"
+        )
+        agent_os_target_computer = self._manager.switch(computer_id)
+        self._reporter.add_message(
+            self._REPORTER_SOURCE,
+            (
+                f"switch_agent_os_target_computer({computer_id!r}) -> "
+                f"{agent_os_target_computer!r}"
+            ),
+        )
+        return agent_os_target_computer
+
+    @contextmanager
+    @override
+    def temporary_select(self, computer_id: str) -> Iterator[Self]:
+        previous = self._manager.active
+        self._reporter.add_message(
+            self._REPORTER_SOURCE,
+            f"temporary_select({computer_id!r}) [previous={previous!r}]",
+        )
+        self.switch_agent_os_target_computer(computer_id)
+        try:
+            yield self
+        finally:
+            if previous is not None and previous.computer_id != computer_id:
+                self.switch_agent_os_target_computer(previous.computer_id)
+            self._reporter.add_message(
+                self._REPORTER_SOURCE,
+                f"temporary_select({computer_id!r}) -> restored",
+            )
 
     @telemetry.record_call()
     @override
     def connect(self) -> None:
         """
-        Establishes a connection to the AskUI Remote Device Controller.
-
-        This method starts the controller server, establishes a gRPC channel,
-        creates a session, and sets up the initial display.
+        Open a gRPC channel and session to every registered target computer via
+        the underlying `ComputerTargetPool`.
         """
-        if self._settings.server_autostart:
-            self._controller_server.start()
-        self._channel = grpc.insecure_channel(
-            self._settings.server_address,
-            options=[
-                ("grpc.max_send_message_length", 2**30),
-                ("grpc.max_receive_message_length", 2**30),
-                ("grpc.default_deadline", 300000),
-            ],
-        )
-        self._stub = controller_v1.ControllerAPIStub(self._channel)
-        self._start_session()
-        self._start_execution()
-        self.set_display(self._display)
-        if self._settings.clean_virtual_displays:
-            logger.info(
-                "clean_virtual_displays is enabled. Removing all virtual displays ... "
-            )
-            self.remove_virtual_displays()
-            logger.info("Virtual displays removed.")
+        self._manager.connect()
 
     def _get_stub(self) -> controller_v1.ControllerAPIStub:
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized. Call `connect()` first."
-        )
-        return self._stub
+        return self._manager.active_connection().stub
 
     def _run_recorder_action(
         self,
@@ -270,31 +324,29 @@ class AskUiControllerClient(AgentOs):
             time.sleep(self._post_action_wait)
             num_retries += 1
         if num_retries == self._max_retries - 1:
-            raise AskUiControllerOperationTimeoutError
+            agent_os_target_computer = self._require_active_agent_os_target_computer()
+            timeout_seconds = self._max_retries * self._post_action_wait
+            timeout_msg = (
+                f"Action did not finish on target computer "
+                f"{agent_os_target_computer.description!r} "
+                f"(session_guid={agent_os_target_computer.session_guid}) within "
+                f"{timeout_seconds:.2f}s ({self._max_retries} polls of "
+                f"{self._post_action_wait:.2f}s). "
+                f"Action class id: {acion_class_id}."
+            )
+            raise AskUiControllerOperationTimeoutError(
+                message=timeout_msg, timeout_seconds=timeout_seconds
+            )
         return response
 
     @telemetry.record_call()
     @override
     def disconnect(self) -> None:
         """
-        Terminates the connection to the AskUI Remote Device Controller.
-
-        This method stops the execution, ends the session, closes the gRPC channel,
-        and stops the controller server.
+        Close every open target-computer connection via the underlying
+        `ComputerTargetPool`.
         """
-        try:
-            self._stop_execution()
-            self._stop_session()
-            if self._channel is not None:
-                self._channel.close()
-            self._controller_server.stop()
-        except Exception as e:  # noqa: BLE001
-            # We want to catch all other exceptions here and not re-raise them
-            msg = (
-                "Error while disconnecting from the AskUI Remote Device Controller"
-                f" Error: {e}"
-            )
-            logger.exception(msg)
+        self._manager.disconnect()
 
     @telemetry.record_call()
     def __enter__(self) -> Self:
@@ -302,7 +354,7 @@ class AskUiControllerClient(AgentOs):
         Context manager entry point that establishes the connection.
 
         Returns:
-            Self: The instance of AskUiControllerClient.
+            Self: The instance of MultiComputerTargetAgentOS.
         """
         self.connect()
         return self
@@ -323,29 +375,6 @@ class AskUiControllerClient(AgentOs):
             traceback: The traceback if an exception was raised.
         """
         self.disconnect()
-
-    def _start_session(self) -> None:
-        response = self._get_stub().StartSession(
-            controller_v1_pbs.Request_StartSession(
-                sessionGUID=self._session_guid, immediateExecution=True
-            )
-        )
-        self._session_info = response.sessionInfo
-
-    def _stop_session(self) -> None:
-        self._get_stub().EndSession(
-            controller_v1_pbs.Request_EndSession(sessionInfo=self._session_info)
-        )
-
-    def _start_execution(self) -> None:
-        self._get_stub().StartExecution(
-            controller_v1_pbs.Request_StartExecution(sessionInfo=self._session_info)
-        )
-
-    def _stop_execution(self) -> None:
-        self._get_stub().StopExecution(
-            controller_v1_pbs.Request_StopExecution(sessionInfo=self._session_info)
-        )
 
     @telemetry.record_call()
     @override
@@ -368,7 +397,7 @@ class AskUiControllerClient(AgentOs):
             controller_v1_pbs.Request_CaptureScreen(
                 sessionInfo=self._session_info,
                 captureParameters=controller_v1_pbs.CaptureParameters(
-                    displayID=self._display
+                    displayID=self._require_active_agent_os_target_computer().display
                 ),
             )
         )
@@ -379,7 +408,7 @@ class AskUiControllerClient(AgentOs):
         ).split()
         image = Image.merge("RGB", (b, g, r))
         if report:
-            self._reporter.add_message("AgentOS", "screenshot()", image)
+            self._reporter.add_message(self._REPORTER_SOURCE, "screenshot()", image)
         return image
 
     @telemetry.record_call()
@@ -394,7 +423,7 @@ class AskUiControllerClient(AgentOs):
             duration (int): The duration (in ms) the movement should take.
         """
         self._reporter.add_message(
-            "AgentOS",
+            self._REPORTER_SOURCE,
             f"mouse_move({x}, {y}, duration={duration})",
             AnnotatedImage(lambda: self.screenshot(report=False), point_list=[(x, y)]),
         )
@@ -419,7 +448,9 @@ class AskUiControllerClient(AgentOs):
             typing_speed (int, optional): The speed of typing in characters per second.
                 Defaults to `50`.
         """
-        self._reporter.add_message("AgentOS", f'type("{text}", {typing_speed})')
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f'type("{text}", {typing_speed})'
+        )
         self._run_recorder_action(
             acion_class_id=controller_v1_pbs.ActionClassID_KeyboardType_UnicodeText,
             action_parameters=controller_v1_pbs.ActionParameters(
@@ -444,7 +475,7 @@ class AskUiControllerClient(AgentOs):
                 click. Defaults to `"left"`.
             count (int, optional): Number of times to click. Defaults to `1`.
         """
-        self._reporter.add_message("AgentOS", f'click("{button}", {count})')
+        self._reporter.add_message(self._REPORTER_SOURCE, f'click("{button}", {count})')
         mouse_button = None
         match button:
             case "left":
@@ -472,7 +503,7 @@ class AskUiControllerClient(AgentOs):
             button (Literal["left", "middle", "right"], optional): The mouse button to
                 press. Defaults to `"left"`.
         """
-        self._reporter.add_message("AgentOS", f'mouse_down("{button}")')
+        self._reporter.add_message(self._REPORTER_SOURCE, f'mouse_down("{button}")')
         mouse_button = None
         match button:
             case "left":
@@ -500,7 +531,7 @@ class AskUiControllerClient(AgentOs):
             button (Literal["left", "middle", "right"], optional): The mouse button to
                 release. Defaults to `"left"`.
         """
-        self._reporter.add_message("AgentOS", f'mouse_up("{button}")')
+        self._reporter.add_message(self._REPORTER_SOURCE, f'mouse_up("{button}")')
         mouse_button = None
         match button:
             case "left":
@@ -530,7 +561,7 @@ class AskUiControllerClient(AgentOs):
             dy (int): The vertical scroll amount. Positive values scroll down,
                 negative values scroll up.
         """
-        self._reporter.add_message("AgentOS", f"mouse_scroll({dx}, {dy})")
+        self._reporter.add_message(self._REPORTER_SOURCE, f"mouse_scroll({dx}, {dy})")
         if dx != 0:
             self._run_recorder_action(
                 acion_class_id=controller_v1_pbs.ActionClassID_MouseWheelScroll,
@@ -570,7 +601,7 @@ class AskUiControllerClient(AgentOs):
                 press along with the main key. Defaults to `None`.
         """
         self._reporter.add_message(
-            "AgentOS", f'keyboard_pressed("{key}", {modifier_keys})'
+            self._REPORTER_SOURCE, f'keyboard_pressed("{key}", {modifier_keys})'
         )
         if modifier_keys is None:
             modifier_keys = []
@@ -597,7 +628,7 @@ class AskUiControllerClient(AgentOs):
                 release along with the main key. Defaults to `None`.
         """
         self._reporter.add_message(
-            "AgentOS", f'keyboard_release("{key}", {modifier_keys})'
+            self._REPORTER_SOURCE, f'keyboard_release("{key}", {modifier_keys})'
         )
         if modifier_keys is None:
             modifier_keys = []
@@ -628,7 +659,7 @@ class AskUiControllerClient(AgentOs):
             count (int, optional): The number of times to tap the key. Defaults to `1`.
         """
         self._reporter.add_message(
-            "AgentOS",
+            self._REPORTER_SOURCE,
             f'keyboard_tap("{key}", {modifier_keys}, {count})',
         )
         if modifier_keys is None:
@@ -657,8 +688,8 @@ class AskUiControllerClient(AgentOs):
         self._get_stub().SetActiveDisplay(
             controller_v1_pbs.Request_SetActiveDisplay(displayID=display)
         )
-        self._display = display
-        self._reporter.add_message("AgentOS", f"set_display({display})")
+        self._require_active_agent_os_target_computer().display = display
+        self._reporter.add_message(self._REPORTER_SOURCE, f"set_display({display})")
 
     @telemetry.record_call(exclude={"command"})
     @override
@@ -671,7 +702,9 @@ class AskUiControllerClient(AgentOs):
             timeout_ms (int, optional): The timeout for command
                 execution in milliseconds. Defaults to `30000` (30 seconds).
         """
-        self._reporter.add_message("AgentOS", f'run_command("{command}", {timeout_ms})')
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f'run_command("{command}", {timeout_ms})'
+        )
         self._run_recorder_action(
             acion_class_id=controller_v1_pbs.ActionClassID_RunCommand,
             action_parameters=controller_v1_pbs.ActionParameters(
@@ -690,15 +723,26 @@ class AskUiControllerClient(AgentOs):
         Returns:
             Display: The currently active display/screen.
         """
-        self._reporter.add_message("AgentOS", "retrieve_active_display()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "retrieve_active_display()")
+        agent_os_target_computer = self._require_active_agent_os_target_computer()
+        active_display_id = agent_os_target_computer.display
         displays_list_response = self.list_displays()
         for display in displays_list_response.data:
-            if display.id == self._display:
+            if display.id == active_display_id:
                 self._reporter.add_message(
-                    "AgentOS", f"retrieve_active_display() -> {display}"
+                    self._REPORTER_SOURCE, f"retrieve_active_display() -> {display}"
                 )
                 return display
-        error_msg = f"Display {self._display} not found"
+        available_ids = (
+            ", ".join(str(d.id) for d in displays_list_response.data) or "none"
+        )
+        error_msg = (
+            f"Display {active_display_id} not found on target computer "
+            f"{agent_os_target_computer.description!r} "
+            f"(session_guid={agent_os_target_computer.session_guid}). "
+            f"Available display ids: {available_ids}. "
+            "Call `set_display()` with a valid id, or `list_displays()` to inspect."
+        )
         raise ValueError(error_msg)
 
     @telemetry.record_call()
@@ -715,7 +759,7 @@ class AskUiControllerClient(AgentOs):
             DisplaysListResponse
         """
 
-        self._reporter.add_message("AgentOS", "list_displays()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "list_displays()")
 
         response: controller_v1_pbs.Response_GetDisplayInformation = (
             self._get_stub().GetDisplayInformation(controller_v1_pbs.Request_Void())
@@ -728,7 +772,9 @@ class AskUiControllerClient(AgentOs):
 
         displays = DisplaysListResponse.model_validate(response_dict)
 
-        self._reporter.add_message("AgentOS", f"list_displays() ->{str(displays)}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"list_displays() ->{str(displays)}"
+        )
 
         return displays
 
@@ -749,7 +795,9 @@ class AskUiControllerClient(AgentOs):
                 - processes: List of ProcessInfo objects
         """
 
-        self._reporter.add_message("AgentOS", f"get_process_list({get_extended_info})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_process_list({get_extended_info})"
+        )
 
         response: controller_v1_pbs.Response_GetProcessList = (
             self._get_stub().GetProcessList(
@@ -759,7 +807,8 @@ class AskUiControllerClient(AgentOs):
             )
         )
         self._reporter.add_message(
-            "AgentOS", f"get_process_list({get_extended_info}) -> {response}"
+            self._REPORTER_SOURCE,
+            f"get_process_list({get_extended_info}) -> {response}",
         )
 
         return response
@@ -779,7 +828,9 @@ class AskUiControllerClient(AgentOs):
                 - windows: List of WindowInfo objects with ID and name
         """
 
-        self._reporter.add_message("AgentOS", f"get_window_list({process_id})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_window_list({process_id})"
+        )
 
         response: controller_v1_pbs.Response_GetWindowList = (
             self._get_stub().GetWindowList(
@@ -788,7 +839,7 @@ class AskUiControllerClient(AgentOs):
         )
 
         self._reporter.add_message(
-            "AgentOS", f"get_window_list({process_id}) -> {response}"
+            self._REPORTER_SOURCE, f"get_window_list({process_id}) -> {response}"
         )
 
         return response
@@ -806,13 +857,15 @@ class AskUiControllerClient(AgentOs):
                 - targets: List of AutomationTarget objects
         """
 
-        self._reporter.add_message("AgentOS", "get_automation_target_list()")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, "get_automation_target_list()"
+        )
 
         response: controller_v1_pbs.Response_GetAutomationTargetList = (
             self._get_stub().GetAutomationTargetList(controller_v1_pbs.Request_Void())
         )
         self._reporter.add_message(
-            "AgentOS", f"get_automation_target_list() -> {response}"
+            self._REPORTER_SOURCE, f"get_automation_target_list() -> {response}"
         )
 
         return response
@@ -826,7 +879,9 @@ class AskUiControllerClient(AgentOs):
             delay_ms (int): The delay in milliseconds to set for mouse actions.
         """
 
-        self._reporter.add_message("AgentOS", f"set_mouse_delay({delay_ms})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"set_mouse_delay({delay_ms})"
+        )
 
         self._get_stub().SetMouseDelay(
             controller_v1_pbs.Request_SetMouseDelay(
@@ -843,7 +898,9 @@ class AskUiControllerClient(AgentOs):
             delay_ms (int): The delay in milliseconds to set for keyboard actions.
         """
 
-        self._reporter.add_message("AgentOS", f"set_keyboard_delay({delay_ms})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"set_keyboard_delay({delay_ms})"
+        )
 
         self._get_stub().SetKeyboardDelay(
             controller_v1_pbs.Request_SetKeyboardDelay(
@@ -870,7 +927,7 @@ class AskUiControllerClient(AgentOs):
         """
 
         self._reporter.add_message(
-            "AgentOS", f"set_active_window({process_id}, {window_id})"
+            self._REPORTER_SOURCE, f"set_active_window({process_id}, {window_id})"
         )
 
         display_length_before_adding_window = len(self.list_displays().data)
@@ -882,10 +939,16 @@ class AskUiControllerClient(AgentOs):
         )
         new_display_length = len(self.list_displays().data)
         if new_display_length <= display_length_before_adding_window:
-            msg = f"Failed to set active window {window_id} for process {process_id}"
+            msg = (
+                f"Failed to add window {window_id} of process {process_id} as a "
+                f"virtual display: display count did not increase "
+                f"({display_length_before_adding_window} -> {new_display_length}). "
+                "Verify the process and window ids exist and are valid for the "
+                "active target computer."
+            )
             raise AskUiControllerError(msg)
         self._reporter.add_message(
-            "AgentOS",
+            self._REPORTER_SOURCE,
             f"set_active_window({process_id}, {window_id}) -> {new_display_length}",
         )
         return new_display_length
@@ -900,7 +963,7 @@ class AskUiControllerClient(AgentOs):
         """
 
         self._reporter.add_message(
-            "AgentOS", f"set_active_automation_target({target_id})"
+            self._REPORTER_SOURCE, f"set_active_automation_target({target_id})"
         )
 
         self._get_stub().SetActiveAutomationTarget(
@@ -928,7 +991,7 @@ class AskUiControllerClient(AgentOs):
         """
 
         self._reporter.add_message(
-            "AgentOS",
+            self._REPORTER_SOURCE,
             f"schedule_batched_action({action_class_id}, {action_parameters})",
         )
 
@@ -950,7 +1013,7 @@ class AskUiControllerClient(AgentOs):
         Start executing batched actions.
         """
 
-        self._reporter.add_message("AgentOS", "start_batch_run()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "start_batch_run()")
 
         self._get_stub().StartBatchRun(
             controller_v1_pbs.Request_StartBatchRun(sessionInfo=self._session_info)
@@ -962,7 +1025,7 @@ class AskUiControllerClient(AgentOs):
         Stop executing batched actions.
         """
 
-        self._reporter.add_message("AgentOS", "stop_batch_run()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "stop_batch_run()")
 
         self._get_stub().StopBatchRun(
             controller_v1_pbs.Request_StopBatchRun(sessionInfo=self._session_info)
@@ -983,7 +1046,9 @@ class AskUiControllerClient(AgentOs):
                 controller_v1_pbs.Request_GetActionCount(sessionInfo=self._session_info)
             )
         )
-        self._reporter.add_message("AgentOS", f"get_action_count() -> {response}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_action_count() -> {response}"
+        )
         return response
 
     @telemetry.record_call()
@@ -1001,7 +1066,7 @@ class AskUiControllerClient(AgentOs):
                 - actionParameters: The action parameters
         """
 
-        self._reporter.add_message("AgentOS", f"get_action({action_index})")
+        self._reporter.add_message(self._REPORTER_SOURCE, f"get_action({action_index})")
 
         response: controller_v1_pbs.Response_GetAction = self._get_stub().GetAction(
             controller_v1_pbs.Request_GetAction(
@@ -1020,7 +1085,7 @@ class AskUiControllerClient(AgentOs):
             action_id (int): The ID of the action to remove.
         """
 
-        self._reporter.add_message("AgentOS", f"remove_action({action_id})")
+        self._reporter.add_message(self._REPORTER_SOURCE, f"remove_action({action_id})")
 
         self._get_stub().RemoveAction(
             controller_v1_pbs.Request_RemoveAction(
@@ -1034,7 +1099,7 @@ class AskUiControllerClient(AgentOs):
         Clear all recorded or batched actions.
         """
 
-        self._reporter.add_message("AgentOS", "remove_all_actions()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "remove_all_actions()")
 
         self._get_stub().RemoveAllActions(
             controller_v1_pbs.Request_RemoveAllActions(sessionInfo=self._session_info)
@@ -1053,10 +1118,11 @@ class AskUiControllerClient(AgentOs):
 
         Raises:
             AskUiControllerInvalidCommandError: If the command fails schema validation
-                on the server side.
+                on the target computer side.
         """
 
-        header = Header(authentication=Guid(root=self._session_guid))
+        agent_os_target_computer = self._require_active_agent_os_target_computer()
+        header = Header(authentication=Guid(root=agent_os_target_computer.session_guid))
         message = Message(header=header, command=command)
 
         request = AskUIAgentOSSendRequestSchema(message=message)
@@ -1083,13 +1149,15 @@ class AskUiControllerClient(AgentOs):
         Returns:
             Coordinate: Response containing the result of the mouse position change.
         """
-        self._reporter.add_message("AgentOS", "get_mouse_position()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "get_mouse_position()")
         res = self._send_command(GetMousePositionCommand())
         coordinate = Coordinate(
             x=res.message.command.response.position.x.root,  # type: ignore[union-attr]
             y=res.message.command.response.position.y.root,  # type: ignore[union-attr]
         )
-        self._reporter.add_message("AgentOS", f"get_mouse_position() -> {coordinate}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_mouse_position() -> {coordinate}"
+        )
         return coordinate
 
     @telemetry.record_call()
@@ -1103,7 +1171,9 @@ class AskUiControllerClient(AgentOs):
         """
         location = Location(x=Length(root=x), y=Length(root=y))
         command = SetMousePositionCommand(parameters=[location])
-        self._reporter.add_message("AgentOS", f"set_mouse_position({x},{y})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"set_mouse_position({x},{y})"
+        )
         self._send_command(command)
 
     @telemetry.record_call()
@@ -1117,7 +1187,7 @@ class AskUiControllerClient(AgentOs):
         Returns:
             int: Object ID.
         """
-        self._reporter.add_message("AgentOS", f"render_quad({style})")
+        self._reporter.add_message(self._REPORTER_SOURCE, f"render_quad({style})")
         command = AddRenderObjectCommand(parameters=["Quad", style])
         res = self._send_command(command)
         return int(res.message.command.response.id.root)  # type: ignore[union-attr]
@@ -1134,7 +1204,9 @@ class AskUiControllerClient(AgentOs):
         Returns:
             int: Object ID.
         """
-        self._reporter.add_message("AgentOS", f"render_line({style}, {points})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"render_line({style}, {points})"
+        )
         command = AddRenderObjectCommand(parameters=["Line", style, points])
         res = self._send_command(command)
         return int(res.message.command.response.id.root)  # type: ignore[union-attr]
@@ -1151,7 +1223,9 @@ class AskUiControllerClient(AgentOs):
         Returns:
             int: Object ID.
         """
-        self._reporter.add_message("AgentOS", f"render_image({style}, [image_data])")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"render_image({style}, [image_data])"
+        )
         image = RenderImage(root=image_data)
         command = AddRenderObjectCommand(parameters=["Image", style, image])
         res = self._send_command(command)
@@ -1170,7 +1244,9 @@ class AskUiControllerClient(AgentOs):
         Returns:
             int: Object ID.
         """
-        self._reporter.add_message("AgentOS", f"render_text({style}, {content})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"render_text({style}, {content})"
+        )
         text = RenderText(root=content)
         command = AddRenderObjectCommand(parameters=["Text", style, text])
         res = self._send_command(command)
@@ -1189,7 +1265,7 @@ class AskUiControllerClient(AgentOs):
             int: Object ID.
         """
         self._reporter.add_message(
-            "AgentOS", f"update_render_object({object_id}, {style})"
+            self._REPORTER_SOURCE, f"update_render_object({object_id}, {style})"
         )
         render_object_id = RenderObjectId(root=object_id)
         command = UpdateRenderObjectCommand(parameters=[render_object_id, style])
@@ -1203,7 +1279,9 @@ class AskUiControllerClient(AgentOs):
         Args:
             object_id (RenderObjectId): The ID of the render object to delete.
         """
-        self._reporter.add_message("AgentOS", f"delete_render_object({object_id})")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"delete_render_object({object_id})"
+        )
         render_object_id = RenderObjectId(root=object_id)
         command = DeleteRenderObjectCommand(parameters=[render_object_id])
         self._send_command(command)
@@ -1213,7 +1291,7 @@ class AskUiControllerClient(AgentOs):
         """
         Clear all render objects from the display.
         """
-        self._reporter.add_message("AgentOS", "clear_render_objects()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "clear_render_objects()")
         command = ClearRenderObjectsCommand()
         self._send_command(command)
 
@@ -1224,16 +1302,18 @@ class AskUiControllerClient(AgentOs):
         Returns:
             SystemInfo: The system information.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
-        self._reporter.add_message("AgentOS", "get_system_info()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "get_system_info()")
         command = GetSystemInfoCommand()
         res = self._send_command(command).message.command
         if not isinstance(res, GetSystemInfoResponse):
-            message = f"unexpected response type: {res}"
+            message = (
+                f"get_system_info: expected GetSystemInfoResponse from the "
+                f"controller but got {type(res).__name__}: {res!r}"
+            )
             raise DesktopAgentOsError(message)
-        self._reporter.add_message("AgentOS", f"get_system_info() -> {res.response}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_system_info() -> {res.response}"
+        )
         return res.response
 
     def get_active_process(self) -> GetActiveProcessResponseModel:
@@ -1243,16 +1323,18 @@ class AskUiControllerClient(AgentOs):
         Returns:
             GetActiveProcessResponseModel: The active process.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
-        self._reporter.add_message("AgentOS", "get_active_process()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "get_active_process()")
         command = GetActiveProcessCommand()
         res = self._send_command(command).message.command
         if not isinstance(res, GetActiveProcessResponse):
-            message = f"unexpected response type: {res}"
+            message = (
+                f"get_active_process: expected GetActiveProcessResponse from the "
+                f"controller but got {type(res).__name__}: {res!r}"
+            )
             raise DesktopAgentOsError(message)
-        self._reporter.add_message("AgentOS", f"get_active_process() -> {res.response}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_active_process() -> {res.response}"
+        )
         return res.response
 
     def set_active_process(self, process_id: int) -> None:
@@ -1262,10 +1344,9 @@ class AskUiControllerClient(AgentOs):
         Args:
             process_id (int): The ID of the process to set as active.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"set_active_process({process_id})"
         )
-        self._reporter.add_message("AgentOS", f"set_active_process({process_id})")
         _process_id = Parameter3(root=process_id)
         command = SetActiveProcessCommand(parameters=[_process_id])
         self._send_command(command)
@@ -1279,16 +1360,18 @@ class AskUiControllerClient(AgentOs):
         Returns:
             GetActiveWindowResponseModel: The active window.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
-        self._reporter.add_message("AgentOS", "get_active_window()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "get_active_window()")
         command = GetActiveWindowCommand()
         res = self._send_command(command).message.command
         if not isinstance(res, GetActiveWindowResponse):
-            message = f"unexpected response type: {res}"
+            message = (
+                f"get_active_window: expected GetActiveWindowResponse from the "
+                f"controller but got {type(res).__name__}: {res!r}"
+            )
             raise DesktopAgentOsError(message)
-        self._reporter.add_message("AgentOS", f"get_active_window() -> {res.response}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_active_window() -> {res.response}"
+        )
         return res.response
 
     def set_window_in_focus(self, process_id: int, window_id: int) -> None:
@@ -1301,17 +1384,16 @@ class AskUiControllerClient(AgentOs):
             process_id (int): The ID of the process that owns the window.
             window_id (int): The ID of the window to set as active.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
         self._reporter.add_message(
-            "AgentOS", f"set_window_in_focus({process_id}, {window_id})"
+            self._REPORTER_SOURCE, f"set_window_in_focus({process_id}, {window_id})"
         )
         _process_id = Parameter3(root=process_id)
         _window_id = Parameter3(root=window_id)
         command = SetActiveWindowCommand(parameters=[_process_id, _window_id])
         self._send_command(command)
 
+    @telemetry.record_call()
+    @override
     def get_file_names(self, absolute_directory_path: str) -> list[str]:
         """
         Get the file names in the given absolute directory on the device under
@@ -1324,11 +1406,8 @@ class AskUiControllerClient(AgentOs):
         Returns:
             list[str]: The file names returned by the controller.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
         self._reporter.add_message(
-            "AgentOS", f"get_file_names({absolute_directory_path})"
+            self._REPORTER_SOURCE, f"get_file_names({absolute_directory_path})"
         )
         command = GetFileNamesCommand(parameters=[absolute_directory_path])
         res = self._send_command(command).message.command
@@ -1341,10 +1420,13 @@ class AskUiControllerClient(AgentOs):
             message = f"{type(res).__name__} is missing both error and response"
             raise DesktopAgentOsError(message)
         self._reporter.add_message(
-            "AgentOS", f"get_file_names({absolute_directory_path}) -> {res.response}"
+            self._REPORTER_SOURCE,
+            f"get_file_names({absolute_directory_path}) -> {res.response}",
         )
         return res.response.fileNames
 
+    @telemetry.record_call()
+    @override
     def get_file(self, path: str) -> Image.Image | str:
         """
         Get the contents of a file at the given path on the device under
@@ -1364,10 +1446,7 @@ class AskUiControllerClient(AgentOs):
         Raises:
             DesktopAgentOsError: If the file cannot be read or the response is invalid.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
-        self._reporter.add_message("AgentOS", f"get_file({path})")
+        self._reporter.add_message(self._REPORTER_SOURCE, f"get_file({path})")
         command = GetFileCommand(parameters=[path])
         res = self._send_command(command).message.command
         if not isinstance(res, GetFileResponse):
@@ -1382,26 +1461,29 @@ class AskUiControllerClient(AgentOs):
         if isinstance(decoded, Image.Image):
             detail = f"image ({decoded.format}, {decoded.size[0]}x{decoded.size[1]})"
             self._reporter.add_message(
-                "AgentOS", f"get_file({path}) -> {detail}", decoded
+                self._REPORTER_SOURCE, f"get_file({path}) -> {detail}", decoded
             )
             return decoded
 
         detail = f"text ({len(decoded)} chars)"
-        self._reporter.add_message("AgentOS", f"get_file({path}) -> {detail}")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, f"get_file({path}) -> {detail}"
+        )
         return decoded
 
+    @telemetry.record_call()
+    @override
     def remove_virtual_displays(self) -> None:
         """
         Remove all virtual displays from the controller, leaving only real
         displays active.
         """
-        assert isinstance(self._stub, controller_v1.ControllerAPIStub), (
-            "Stub is not initialized"
-        )
-        self._reporter.add_message("AgentOS", "remove_virtual_displays()")
+        self._reporter.add_message(self._REPORTER_SOURCE, "remove_virtual_displays()")
         command = RemoveVirtualDisplaysCommand()
         self._send_command(command)
-        self._reporter.add_message("AgentOS", "remove_virtual_displays() -> done")
+        self._reporter.add_message(
+            self._REPORTER_SOURCE, "remove_virtual_displays() -> done"
+        )
 
     @staticmethod
     def _decode_file_payload(base64_data: str) -> Image.Image | str:
@@ -1417,3 +1499,6 @@ class AskUiControllerClient(AgentOs):
                 pass
         message = "File contents are neither a supported image nor UTF-8 text"
         raise DesktopAgentOsError(message)
+
+
+AskUiControllerClient = MultiComputerTargetAgentOS

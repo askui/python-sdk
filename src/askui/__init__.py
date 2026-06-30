@@ -46,6 +46,7 @@ from .models.shared.tools import Tool
 from .models.types.response_schemas import ResponseSchema, ResponseSchemaBase
 from .retry import ConfigurableRetry, Retry
 from .tools import ModifierKey, PcKey
+from .tools.askui import LocalComputerTarget, RemoteComputerTarget
 from .utils.image_utils import ImageSource
 from .utils.source_utils import InputSource
 
@@ -70,6 +71,8 @@ except ImportError:
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
+    "RemoteComputerTarget",
+    "LocalComputerTarget",
     "Agent",
     "AutomationError",
     "ComputerAgent",
