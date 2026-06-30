@@ -15,6 +15,7 @@ from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.shared.agent_message_param import MessageParam
 from askui.models.shared.conversation import Conversation, Speakers
+from askui.models.shared.secrets import Secret, SecretVault
 from askui.models.shared.settings import (
     ActSettings,
     CacheWritingSettings,
@@ -61,12 +62,19 @@ class Agent:
         settings: AgentSettings | None = None,
         callbacks: list[ConversationCallback] | None = None,
         truncation_strategy: TruncationStrategy | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         load_dotenv()
         self._reporter: Reporter = reporter or CompositeReporter(reporters=None)
         self._agent_os = agent_os
 
         self._tools = tools or []
+
+        # Secrets the agent may use but the LLM must never see. Real values are
+        # substituted into tool inputs at execution time; placeholders are all the
+        # model ever sees. Literal values are redacted from the LLM history and tool
+        # outputs. See `askui.models.shared.secrets`.
+        self._secret_vault = SecretVault(secrets)
 
         # Store settings and model providers
         _settings = settings or AgentSettings()
@@ -117,7 +125,7 @@ class Agent:
         self.caching_settings = CachingSettings()
 
     @telemetry.record_call(
-        exclude={"goal", "act_settings", "tools", "tracing_settings"}
+        exclude={"goal", "act_settings", "tools", "tracing_settings", "secrets"}
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def act(
@@ -127,6 +135,7 @@ class Agent:
         tools: list[Tool] | ToolCollection | None = None,
         caching_settings: CachingSettings | None = None,
         tracing_settings: OtelSettings | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         """
         Instructs the agent to achieve a specified goal through autonomous actions.
@@ -154,6 +163,14 @@ class Agent:
             tracing_settings (OtelSettings | None, optional): The tracing settings
                 for the act execution. Controls if and how traces are exported via
                 Opentelemetry.
+            secrets (list[Secret] | None, optional): Secrets available for this act
+                execution, in addition to any defined on the agent. The model only ever
+                sees the placeholder `<|secret|>NAME<|secret|>`; the real value is
+                substituted into tool inputs at execution time and is never sent to the
+                model. Per-call secrets override agent-level
+                secrets with the same name. Defaults to `None`. Note: a secret typed
+                into a visible field may still appear in screenshots sent to the model;
+                on-screen secrets cannot currently be hidden.
 
         Returns:
             None
@@ -228,18 +245,30 @@ class Agent:
                 # Agent can use existing caches and will record new actions
             ```
         """
+        # Merge agent-level and per-call secrets (per-call wins on name collision).
+        active_vault = self._secret_vault.merge(SecretVault(secrets))
+
         goal_str = (
             goal
             if isinstance(goal, str)
             else "\n".join(msg.model_dump_json() for msg in goal)
         )
-        self._reporter.add_message("User", f'act: "{goal_str}"')
+        # Redact any literal secret value the user may have placed in the goal before
+        # it reaches the reporter/logs.
+        redacted_goal_str = active_vault.redact(goal_str)
+        self._reporter.add_message("User", f'act: "{redacted_goal_str}"')
         logger.debug(
-            "Agent received instruction to act towards the goal '%s'", goal_str
+            "Agent received instruction to act towards the goal '%s'", redacted_goal_str
         )
         messages: list[MessageParam] = (
             [MessageParam(role="user", content=goal)] if isinstance(goal, str) else goal
         )
+        # Initial messages bypass Conversation._add_message, so redact them here to keep
+        # literal secrets out of the history sent to the LLM.
+        messages = [active_vault.redact_message(message) for message in messages]
+        # Make the vault available for substitution (tools) and redaction (history).
+        # The Conversation propagates it to the ToolCollection.
+        self._conversation.secret_vault = active_vault
         _act_settings = act_settings or self.act_settings
 
         _caching_settings: CachingSettings = caching_settings or self.caching_settings
@@ -274,6 +303,20 @@ class Agent:
         if isinstance(tools, ToolCollection):
             tool_collection += tools
         return tool_collection
+
+    def _resolve_secrets(self, text: str) -> str:
+        """Substitute `<|secret|>NAME<|secret|>` placeholders with real values.
+
+        Used by deterministic input methods (e.g. `type`) so callers/agents can pass a
+        placeholder that resolves to the real value at the OS boundary.
+        """
+        resolved: str = self._secret_vault.substitute(text)
+        return resolved
+
+    def _redact_secrets(self, text: str) -> str:
+        """Redact literal secret values to their placeholders (for reporting/logs)."""
+        redacted: str = self._secret_vault.redact(text)
+        return redacted
 
     def _patch_act_with_cache(
         self,

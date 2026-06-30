@@ -32,6 +32,7 @@ from .models import (
     UrlImageSourceParam,
 )
 from .models.exceptions import AutomationError
+from .models.shared.secrets import Secret, SecretVault
 from .models.shared.settings import (
     DEFAULT_GET_RESOLUTION,
     DEFAULT_LOCATE_RESOLUTION,
@@ -103,6 +104,8 @@ __all__ = [
     "ResponseSchema",
     "ResponseSchemaBase",
     "Retry",
+    "Secret",
+    "SecretVault",
     "TextBlockParam",
     "TextCitationParam",
     "Tool",

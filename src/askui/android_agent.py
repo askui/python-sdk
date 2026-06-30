@@ -10,6 +10,7 @@ from askui.callbacks import ConversationCallback
 from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.models import Point
+from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import ActSettings, MessageSettings
 from askui.models.shared.tools import Tool
 from askui.models.shared.truncation_strategies import TruncationStrategy
@@ -53,6 +54,7 @@ class AndroidAgent(Agent):
         settings (AgentSettings | None, optional): Provider-based model settings. If `None`, uses the default AskUI model stack.
         retry (Retry, optional): The retry instance to use for retrying failed actions. Defaults to `ConfigurableRetry` with exponential backoff. Currently only supported for `locate()` method.
         act_tools (list[Tool] | None, optional): Additional tools to make available for the `act()` method.
+        secrets (list[Secret] | None, optional): Sensitive values (e.g. passwords) the agent may use but the LLM must never see. The model only sees the placeholder `<|secret|>NAME<|secret|>`; the real value is substituted at execution time and kept out of the LLM prompt, reporter, logs and cache. Also usable in deterministic `type()` and overridable per call via `act(..., secrets=[...])`. Note: a secret typed into a visible field may still appear in screenshots sent to the model; on-screen secrets cannot currently be hidden.
 
     Example:
         ```python
@@ -72,6 +74,7 @@ class AndroidAgent(Agent):
             "act_tools",
             "callbacks",
             "truncation_strategy",
+            "secrets",
         }
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
@@ -84,6 +87,7 @@ class AndroidAgent(Agent):
         act_tools: list[Tool] | None = None,
         callbacks: list[ConversationCallback] | None = None,
         truncation_strategy: TruncationStrategy | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.os = PpadbAgentOs(device_identifier=device, reporter=reporter)
@@ -95,6 +99,7 @@ class AndroidAgent(Agent):
             settings=settings,
             callbacks=callbacks,
             truncation_strategy=truncation_strategy,
+            secrets=secrets,
         )
         self.act_agent_os_facade = AndroidAgentOsFacade(
             self.os,
@@ -181,9 +186,10 @@ class AndroidAgent(Agent):
                 agent.type("password123")  # Types a password
             ```
         """
-        self._reporter.add_message("User", f'type: "{text}"')
-        logger.debug("AndroidAgent received instruction to type", extra={"text": text})
-        self.os.type(text)
+        # Reporter sees the placeholder; the device receives the resolved value.
+        self._reporter.add_message("User", f'type: "{self._redact_secrets(text)}"')
+        logger.debug("AndroidAgent received instruction to type")
+        self.os.type(self._resolve_secrets(text))
 
     @telemetry.record_call()
     @validate_call
