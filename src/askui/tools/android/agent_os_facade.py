@@ -1,77 +1,86 @@
-from collections.abc import Iterator
-from contextlib import contextmanager
-from typing import List, Optional, Tuple
+from __future__ import annotations
 
-from PIL import Image
-from typing_extensions import Self
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.android.agent_os import ANDROID_KEY, AndroidAgentOs, AndroidDisplay
-from askui.tools.android.uiautomator_hierarchy import UIElementCollection
-from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
+from askui.tools.coordinate_scaler import CoordinateScaler
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from PIL import Image
+    from typing_extensions import Self
+
+    from askui.models.shared.coordinate_space import VlmCoordinateSpace
+    from askui.models.shared.image_scaler import ImageScaler
+    from askui.tools.android.uiautomator_hierarchy import UIElementCollection
 
 
 class AndroidAgentOsFacade(AndroidAgentOs):
-    """
-    Facade for AndroidAgentOs that adds coordinate scaling functionality.
-    It is used to scale the coordinates to the target resolution
-    and back to the real screen resolution.
+    """Facade for `AndroidAgentOs` that adds coordinate scaling.
+
+    Screenshots are scaled using the provider's image scaler so that the
+    AI model sees an optimally sized image.  Coordinate-based inputs
+    (``tap``, ``swipe``, ``drag_and_drop``) are scaled back up to the
+    real device resolution before being forwarded to the underlying agent OS.
+
+    Args:
+        agent_os (`AndroidAgentOs`): The real Android agent OS to wrap.
+        coordinate_space (`VlmCoordinateSpace`): Coordinate grid the model uses.
+        image_scaler (`ImageScaler`): Callable to preprocess screenshots.
     """
 
-    def __init__(self, agent_os: AndroidAgentOs) -> None:
+    def __init__(
+        self,
+        agent_os: AndroidAgentOs,
+        coordinate_space: VlmCoordinateSpace,
+        image_scaler: ImageScaler,
+    ) -> None:
         self._agent_os: AndroidAgentOs = agent_os
-        self._target_resolution: Tuple[int, int] = (1024, 768)
-        self._real_screen_resolution: Optional[Tuple[int, int]] = None
+        self._scaler = CoordinateScaler(
+            coordinate_space=coordinate_space,
+            image_scaler=image_scaler,
+            fetch_real_resolution=self._fetch_real_resolution,
+            take_screenshot=self._take_screenshot,
+        )
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
+
+    def _fetch_real_resolution(self) -> tuple[int, int]:
+        return self._agent_os.screenshot().size
+
+    def _take_screenshot(self) -> Image.Image:
+        return self.screenshot()
 
     def connect(self) -> None:
         self._agent_os.connect()
-        self._real_screen_resolution = self._agent_os.screenshot().size
+        self._scaler.real_screen_resolution = self._agent_os.screenshot().size
 
     def disconnect(self) -> None:
         self._agent_os.disconnect()
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def screenshot(self) -> Image.Image:
         screenshot = self._agent_os.screenshot()
-        self._real_screen_resolution = screenshot.size
-        return scale_image_to_fit(
-            screenshot,
-            self._target_resolution,
-        )
+        return self._scaler.scale_screenshot(screenshot)
 
-    def _scale_coordinates(
-        self,
-        x: int,
-        y: int,
-        from_agent: bool = True,
-    ) -> Tuple[int, int]:
-        if self._real_screen_resolution is None:
-            self._real_screen_resolution = self._agent_os.screenshot().size
-
-        return scale_coordinates(
-            (x, y),
-            self._real_screen_resolution,
-            self._target_resolution,
-            inverse=from_agent,
-        )
-
-    def tap(self, x: int, y: int) -> None:
-        x, y = self._scale_coordinates(x, y)
+    def tap(self, x: float, y: float) -> None:
+        x, y = self._scaler.scale_coordinates(x, y)
         self._agent_os.tap(x, y)
 
     def swipe(
-        self, x1: int, y1: int, x2: int, y2: int, duration_in_ms: int = 1000
+        self, x1: float, y1: float, x2: float, y2: float, duration_in_ms: int = 1000
     ) -> None:
-        x1, y1 = self._scale_coordinates(x1, y1)
-        x2, y2 = self._scale_coordinates(x2, y2)
+        x1, y1 = self._scaler.scale_coordinates(x1, y1)
+        x2, y2 = self._scaler.scale_coordinates(x2, y2)
         self._agent_os.swipe(x1, y1, x2, y2, duration_in_ms)
 
     def drag_and_drop(
-        self, x1: int, y1: int, x2: int, y2: int, duration_in_ms: int = 1000
+        self, x1: float, y1: float, x2: float, y2: float, duration_in_ms: int = 1000
     ) -> None:
-        x1, y1 = self._scale_coordinates(x1, y1)
-        x2, y2 = self._scale_coordinates(x2, y2)
+        x1, y1 = self._scaler.scale_coordinates(x1, y1)
+        x2, y2 = self._scaler.scale_coordinates(x2, y2)
         self._agent_os.drag_and_drop(x1, y1, x2, y2, duration_in_ms)
 
     def type(self, text: str) -> None:
@@ -81,7 +90,7 @@ class AndroidAgentOsFacade(AndroidAgentOs):
         self._agent_os.key_tap(key)
 
     def key_combination(
-        self, keys: List[ANDROID_KEY], duration_in_ms: int = 100
+        self, keys: list[ANDROID_KEY], duration_in_ms: int = 100
     ) -> None:
         self._agent_os.key_combination(keys, duration_in_ms)
 
@@ -93,27 +102,27 @@ class AndroidAgentOsFacade(AndroidAgentOs):
 
     def set_display_by_index(self, display_index: int = 0) -> None:
         self._agent_os.set_display_by_index(display_index)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def set_display_by_unique_id(self, display_unique_id: int) -> None:
         self._agent_os.set_display_by_unique_id(display_unique_id)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def set_display_by_id(self, display_id: int) -> None:
         self._agent_os.set_display_by_id(display_id)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def set_display_by_name(self, display_name: str) -> None:
         self._agent_os.set_display_by_name(display_name)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def set_device_by_index(self, device_index: int = 0) -> None:
         self._agent_os.set_device_by_index(device_index)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def set_device_by_serial_number(self, device_sn: str) -> None:
         self._agent_os.set_device_by_serial_number(device_sn)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     @contextmanager
     def temporary_select(self, device_sn: str) -> Iterator[Self]:
@@ -146,7 +155,7 @@ class AndroidAgentOsFacade(AndroidAgentOs):
             if element.center is None:
                 continue
             element.set_center(
-                self._scale_coordinates(
+                self._scaler.scale_coordinates(
                     x=element.center[0],
                     y=element.center[1],
                     from_agent=False,

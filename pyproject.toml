@@ -5,8 +5,7 @@ authors = [
     {name = "askui GmbH", email = "info@askui.com"},
 ]
 dependencies = [
-    'askui-agent-os>=26.4.1; sys_platform == "darwin"',
-    'askui-agent-os>=26.5.1; sys_platform != "darwin"',
+    "askui-agent-os>=26.6.1",
     "anthropic>=0.86.0",
     "fastapi>=0.115.12",
     "fastmcp>=2.3.0",

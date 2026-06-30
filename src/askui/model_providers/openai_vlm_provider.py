@@ -1,72 +1,68 @@
-"""AnthropicVlmProvider — VLM access via direct Anthropic API."""
+"""OpenAIVlmProvider — VLM access via any OpenAI-compatible API."""
 
 import os
 from functools import cached_property
 from typing import Any
 
-from anthropic import Anthropic
+from openai import OpenAI
 from typing_extensions import override
 
 from askui.model_providers.vlm_provider import VlmProvider
-from askui.models.anthropic.messages_api import AnthropicMessagesApi
+from askui.models.openai.messages_api import OpenAIMessagesApi
 from askui.models.shared.agent_message_param import (
     MessageParam,
     ThinkingConfigParam,
     ToolChoiceParam,
+)
+from askui.models.shared.coordinate_space import (
+    PixelCoordinateSpace,
+    VlmCoordinateSpace,
 )
 from askui.models.shared.image_scaler import ImageScaler, PatchOptimizedImageScaler
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.model_pricing import ModelPricing
 
-_DEFAULT_MODEL_ID = "claude-sonnet-4-6"
+_DEFAULT_MODEL_ID = "gpt-5.4"
+_DEFAULT_COORDINATE_SPACE = PixelCoordinateSpace()
 _DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
-class AnthropicVlmProvider(VlmProvider):
-    """VLM provider that routes requests directly to the Anthropic API.
+class OpenAIVlmProvider(VlmProvider):
+    """VLM provider for any OpenAI-compatible API.
 
-    Supports Claude 4.x generation models. The API key is read from the
-    `ANTHROPIC_API_KEY` environment variable lazily — validation happens on
-    the first API call, not at construction time.
+    Works with OpenAI, Ollama, vLLM, LM Studio, Together AI, and any
+    other service that exposes an OpenAI-compatible ``/v1/chat/completions``
+    endpoint.
 
     Args:
-        api_key (str | None, optional): Anthropic API key. Reads
-            `ANTHROPIC_API_KEY` from the environment if not provided.
-        base_url (str | None, optional): Base URL for the Anthropic API.
-            Useful for proxies or custom endpoints.
-        auth_token (str | None, optional): Authorization token for custom
-            authentication. Added as an `Authorization` header.
-        model_id (str, optional): Claude model to use. Defaults to
-            `\"claude-sonnet-4-6\"`.
-        client (Anthropic | None, optional): Pre-configured Anthropic client.
-            If provided, other connection parameters are ignored.
-        input_cost_per_million_tokens (float | None, optional): Override
-            cost in USD per 1M input tokens. All override pricing params must be set to
-            override the built-in defaults.
-        output_cost_per_million_tokens (float | None, optional): Override
-            cost in USD per 1M output tokens.
-        cache_write_cost_per_million_tokens (float | None, optional): Override
-            cost in USD per 1M cache write input tokens.
+        model_id (str): Model name to use.
+        api_key (str | None, optional): API key. Reads ``OPENAI_API_KEY``
+            from the environment if not provided.
+        base_url (str | None, optional): Base URL for the API. Defaults
+            to the OpenAI API (``https://api.openai.com/v1``).
+        client (`OpenAI` | None, optional): Pre-configured OpenAI client.
+            If provided, ``api_key`` and ``base_url`` are ignored.
+        coordinate_space (VlmCoordinateSpace, optional): The coordinate grid
+            the model emits coordinates in.  Defaults to the screenshot
+            resolution (native pixel coordinates).
         image_scaler (`ImageScaler` | None, optional): Custom image preprocessing
-            callable. If ``None``, uses Anthropic-optimized patch-based scaling
-            controlled by ``image_edge_max``.
+            callable. If ``None``, uses patch-based scaling controlled by
+            ``image_edge_max``.
         image_edge_max (int | None, optional): Maximum edge length (in pixels)
             for screenshots sent to the model.  Only used when ``image_scaler``
             is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
             environment if not provided.  Defaults to 1024.
-        cache_read_cost_per_million_tokens (float | None, optional): Override
-            cost in USD per 1M cache read input tokens.
 
     Example:
         ```python
         from askui import AgentSettings, ComputerAgent
-        from askui.model_providers import AnthropicVlmProvider
+        from askui.model_providers import OpenAIVlmProvider
 
         agent = ComputerAgent(settings=AgentSettings(
-            vlm_provider=AnthropicVlmProvider(
-                api_key=\"sk-ant-...\",
-                model_id=\"claude-opus-4-5-20251101\",
+            vlm_provider=OpenAIVlmProvider(
+                model_id="gpt-4o",
+                api_key="sk-...",
             )
         ))
         ```
@@ -74,11 +70,11 @@ class AnthropicVlmProvider(VlmProvider):
 
     def __init__(
         self,
+        model_id: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
-        auth_token: str | None = None,
-        model_id: str | None = None,
-        client: Anthropic | None = None,
+        client: OpenAI | None = None,
+        coordinate_space: VlmCoordinateSpace = _DEFAULT_COORDINATE_SPACE,
         image_scaler: ImageScaler | None = None,
         image_edge_max: int | None = None,
         input_cost_per_million_tokens: float | None = None,
@@ -89,22 +85,25 @@ class AnthropicVlmProvider(VlmProvider):
         self._model_id_value = (
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
         )
+        self._coordinate_space = coordinate_space
         resolved_edge_max = (
             image_edge_max
             or int(os.environ.get("ASKUI_VLM_MAX_IMAGE_EDGE", "0"))
             or _DEFAULT_MAX_IMAGE_EDGE
         )
         self._image_scaler = image_scaler or PatchOptimizedImageScaler(
-            max_edge=resolved_edge_max
+            max_edge=resolved_edge_max,
+            max_tokens=1536,
+            patch_size=32,
         )
         if client is not None:
-            self.client = client
+            self._client = client
         else:
-            self.client = Anthropic(
+            self._client = OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                auth_token=auth_token,
             )
+
         self._pricing = ModelPricing.for_model(
             self._model_id_value,
             input_cost_per_million_tokens=input_cost_per_million_tokens,
@@ -120,6 +119,11 @@ class AnthropicVlmProvider(VlmProvider):
 
     @property
     @override
+    def coordinate_space(self) -> VlmCoordinateSpace:
+        return self._coordinate_space
+
+    @property
+    @override
     def pricing(self) -> ModelPricing | None:
         return self._pricing
 
@@ -129,9 +133,15 @@ class AnthropicVlmProvider(VlmProvider):
         return self._image_scaler
 
     @cached_property
-    def _messages_api(self) -> AnthropicMessagesApi:
-        """Lazily initialise the AnthropicMessagesApi on first use."""
-        return AnthropicMessagesApi(client=self.client)
+    def _messages_api(self) -> OpenAIMessagesApi:
+        """Lazily initialise the `OpenAIMessagesApi` on first use."""
+        return OpenAIMessagesApi(client=self._client)
+
+    @override
+    def augment_system_prompt(self, system: SystemPrompt) -> SystemPrompt:
+        """Append coordinate and resolution info to the system prompt."""
+        coord_info = self.coordinate_space.build_prompt_section()
+        return SystemPrompt(prompt=f"{str(system)}\n\n{coord_info}")
 
     @override
     def create_message(
@@ -145,7 +155,9 @@ class AnthropicVlmProvider(VlmProvider):
         temperature: float | None = None,
         provider_options: dict[str, Any] | None = None,
     ) -> MessageParam:
-        result: MessageParam = self._messages_api.create_message(
+        if system is not None:
+            system = self.augment_system_prompt(system)
+        return self._messages_api.create_message(
             messages=messages,
             model_id=self._model_id_value,
             tools=tools,
@@ -156,4 +168,3 @@ class AnthropicVlmProvider(VlmProvider):
             temperature=temperature,
             provider_options=provider_options,
         )
-        return result

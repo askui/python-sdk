@@ -5,12 +5,13 @@ from typing import TYPE_CHECKING
 from PIL import Image
 from typing_extensions import Self
 
+from askui.models.shared.coordinate_space import VlmCoordinateSpace
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import (
     ComputerAgentOS,
     Coordinate,
     Display,
-    DisplaySize,
     DisplaysListResponse,
     InputEvent,
     ModifierKey,
@@ -18,7 +19,7 @@ from askui.tools.agent_os import (
     PcKey,
 )
 from askui.tools.askui.askui_controller import RenderObjectStyle  # noqa: TC001
-from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
+from askui.tools.coordinate_scaler import CoordinateScaler
 
 if TYPE_CHECKING:
     from askui.tools.askui.agent_os_target_computer import (
@@ -35,47 +36,104 @@ if TYPE_CHECKING:
 
 
 class ComputerAgentOsFacade(ComputerAgentOS):
-    """
-    Facade for ComputerAgentOS that adds coordinate scaling functionality.
+    """Facade for `ComputerAgentOS` that adds coordinate scaling.
 
-    This class is used to scale the coordinates to the target resolution
-    and back to the real screen resolution.
+    Screenshots are scaled using the provider's image scaler so that the
+    AI model sees an optimally sized image.  Coordinate-based inputs
+    are scaled back up to the real screen resolution before being forwarded
+    to the underlying agent OS.
+
+    Args:
+        agent_os (`ComputerAgentOS`): The real agent OS to wrap.
+        coordinate_space (`VlmCoordinateSpace`): Coordinate grid the model uses.
+        image_scaler (`ImageScaler`): Callable to preprocess screenshots.
     """
 
-    def __init__(self, agent_os: ComputerAgentOS) -> None:
+    def __init__(
+        self,
+        agent_os: ComputerAgentOS,
+        coordinate_space: VlmCoordinateSpace,
+        image_scaler: ImageScaler,
+    ) -> None:
         self._agent_os = agent_os
-        self._target_resolution: tuple[int, int] = (1024, 768)
-        self._real_screen_resolution: DisplaySize | None = None
+        self._image_scaler = image_scaler
+        self._scaler = CoordinateScaler(
+            coordinate_space=coordinate_space,
+            image_scaler=image_scaler,
+            fetch_real_resolution=self._fetch_real_screen_resolution,
+            take_screenshot=self._take_silent_screenshot,
+        )
         self.tags.append(ToolTags.SCALED_AGENT_OS.value)
 
     def connect(self) -> None:
         self._agent_os.connect()
-        self._real_screen_resolution = self._agent_os.retrieve_active_display().size
+        self._scaler.real_screen_resolution = self._fetch_real_screen_resolution()
 
     def disconnect(self) -> None:
         self._agent_os.disconnect()
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
-        self._real_screen_resolution = DisplaySize(
-            width=screenshot.width, height=screenshot.height
-        )
-        return scale_image_to_fit(screenshot, self._target_resolution)
+        if unscaled:
+            self._scaler.real_screen_resolution = screenshot.size
+            return screenshot
+        return self._scaler.scale_screenshot(screenshot)
 
-    def mouse_move(self, x: int, y: int, duration: int = 500) -> None:
-        scaled_x, scaled_y = self._scale_coordinates_back(x, y)
+    def scale_image_for_model(self, image: Image.Image) -> Image.Image:
+        """Apply the same scaling screenshots receive, without recording state.
+
+        Unlike `screenshot`, this does not update the coordinate scaler's
+        recorded resolutions, so it is safe to call on arbitrary images (e.g. a
+        cropped region) without corrupting coordinate mapping.
+
+        Args:
+            image (Image.Image): The image to scale for model consumption.
+
+        Returns:
+            Image.Image: The scaled image.
+        """
+        return self._image_scaler(image)
+
+    def scale_point_to_real_screen(
+        self, x: float, y: float, check_coordinates_in_bounds: bool = True
+    ) -> tuple[int, int]:
+        """Map a point from the model coordinate space to real screen pixels.
+
+        Args:
+            x (float): The horizontal coordinate in the model coordinate space.
+            y (float): The vertical coordinate in the model coordinate space.
+            check_coordinates_in_bounds (bool, optional): Whether to raise if the
+                mapped coordinate falls outside the screen. Set to `False` when the
+                caller clamps the result itself. Defaults to `True`.
+
+        Returns:
+            tuple[int, int]: The corresponding `(x, y)` in real screen pixels.
+        """
+        return self._scaler.scale_coordinates(
+            x, y, check_coordinates_in_bounds=check_coordinates_in_bounds
+        )
+
+    def _take_silent_screenshot(self) -> Image.Image:
+        return self.screenshot(report=False)
+
+    def _fetch_real_screen_resolution(self) -> tuple[int, int]:
+        display = self._agent_os.retrieve_active_display()
+        return display.size.width, display.size.height
+
+    def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
+        scaled_x, scaled_y = self._scaler.scale_coordinates(x, y)
         self._agent_os.mouse_move(scaled_x, scaled_y, duration)
 
     def get_mouse_position(self) -> Coordinate:
         mouse_position = self._agent_os.get_mouse_position()
-        scaled_x, scaled_y = self._scale_coordinates_back(
+        scaled_x, scaled_y = self._scaler.scale_coordinates(
             mouse_position.x, mouse_position.y, from_agent=False
         )
         return Coordinate(x=scaled_x, y=scaled_y)
 
-    def set_mouse_position(self, x: int, y: int) -> None:
-        scaled_x, scaled_y = self._scale_coordinates_back(x, y)
+    def set_mouse_position(self, x: float, y: float) -> None:
+        scaled_x, scaled_y = self._scaler.scale_coordinates(x, y)
         self._agent_os.set_mouse_position(scaled_x, scaled_y)
 
     def type(self, text: str, typing_speed: int = 50) -> None:
@@ -119,7 +177,7 @@ class ComputerAgentOsFacade(ComputerAgentOS):
 
     def set_display(self, display: int = 1) -> None:
         self._agent_os.set_display(display)
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
     def run_command(self, command: str, timeout_ms: int = 30000) -> None:
         self._agent_os.run_command(command, timeout_ms)
@@ -293,17 +351,17 @@ class ComputerAgentOsFacade(ComputerAgentOS):
         agent_os_target_computer = self._agent_os.switch_agent_os_target_computer(
             computer_id
         )
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
         return agent_os_target_computer
 
     @contextmanager
     def temporary_select(self, computer_id: str) -> Iterator[Self]:
         with self._agent_os.temporary_select(computer_id):
-            self._real_screen_resolution = None
+            self._scaler.real_screen_resolution = None
             try:
                 yield self
             finally:
-                self._real_screen_resolution = None
+                self._scaler.real_screen_resolution = None
 
     def get_file_names(self, absolute_directory_path: str) -> list[str]:
         """
@@ -329,7 +387,7 @@ class ComputerAgentOsFacade(ComputerAgentOS):
         """
         response = self._agent_os.get_file(path)
         if isinstance(response, Image.Image):
-            return scale_image_to_fit(response, self._target_resolution)
+            return self._scaler.scale_screenshot(response)
         return response
 
     def remove_virtual_displays(self) -> None:
@@ -337,21 +395,4 @@ class ComputerAgentOsFacade(ComputerAgentOS):
         Remove virtual displays from the controller, leaving real displays only.
         """
         self._agent_os.remove_virtual_displays()
-        self._real_screen_resolution = None
-
-    def _scale_coordinates_back(
-        self,
-        x: int,
-        y: int,
-        from_agent: bool = True,
-        check_coordinates_in_bounds: bool = True,
-    ) -> tuple[int, int]:
-        if self._real_screen_resolution is None:
-            self._real_screen_resolution = self._agent_os.retrieve_active_display().size
-        return scale_coordinates(
-            (x, y),
-            (self._real_screen_resolution.width, self._real_screen_resolution.height),
-            self._target_resolution,
-            inverse=from_agent,
-            check_coordinates_in_bounds=check_coordinates_in_bounds,
-        )
+        self._scaler.real_screen_resolution = None

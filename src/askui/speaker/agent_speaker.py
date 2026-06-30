@@ -104,6 +104,34 @@ class AgentSpeaker(Speaker):
             logger.exception("Agent stopped with error")
             return SpeakerResult(status="failed", messages_to_add=[response])
 
+        # Check for tool_use stop_reason with no actual tool calls
+        if response.stop_reason == "tool_use" and not self._has_tool_calls(response):
+            logger.warning(
+                "Model returned stop_reason 'tool_use' but content "
+                "contains no tool_use blocks"
+            )
+            messages_to_add: list[MessageParam] = []
+            # Ensure the response has valid content for conversation history
+            # (empty content would violate API alternating-role requirements)
+            if isinstance(response.content, list) and not response.content:
+                response = MessageParam(
+                    role="assistant",
+                    content="I need to use a tool for this task.",
+                    stop_reason=response.stop_reason,
+                    usage=response.usage,
+                )
+            messages_to_add.append(response)
+            feedback_msg = (
+                "No tool name was provided in your response. "
+                "Please provide a valid tool call."
+            )
+            messages_to_add.append(MessageParam(role="user", content=feedback_msg))
+            return SpeakerResult(
+                status="continue",
+                messages_to_add=messages_to_add,
+                usage=response.usage,
+            )
+
         # Check for switch_speaker tool call
         switch_info = self._extract_switch_speaker(response)
         if switch_info:
