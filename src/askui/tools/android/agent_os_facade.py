@@ -127,11 +127,11 @@ class AndroidAgentOsFacade(AndroidAgentOs):
     @contextmanager
     def temporary_select(self, device_sn: str) -> Iterator[Self]:
         with self._agent_os.temporary_select(device_sn):
-            self._real_screen_resolution = None
+            self._scaler.real_screen_resolution = None
             try:
                 yield self
             finally:
-                self._real_screen_resolution = None
+                self._scaler.real_screen_resolution = None
 
     def get_connected_devices_serial_numbers(self) -> list[str]:
         return self._agent_os.get_connected_devices_serial_numbers()
