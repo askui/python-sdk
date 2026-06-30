@@ -2,12 +2,15 @@ import io
 import re
 import shlex
 import string
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional, get_args
 
 from PIL import Image
 from ppadb.client import Client as AdbClient
 from ppadb.device import Device as AndroidDevice
+from typing_extensions import Self
 
 from askui.reporting import NULL_REPORTER, Reporter
 from askui.tools.android.agent_os import (
@@ -201,6 +204,24 @@ class PpadbAgentOs(AndroidAgentOs):
                 return
         msg = f"Device name {device_sn} not found"
         raise AndroidAgentOsError(msg)
+
+    @contextmanager
+    def temporary_select(self, device_sn: str) -> Iterator[Self]:
+        previous_sn = self._device.serial if self._device is not None else None
+        self._reporter.add_message(
+            self._REPORTER_ROLE_NAME,
+            f"temporary_select({device_sn!r}) [previous={previous_sn!r}]",
+        )
+        self.set_device_by_serial_number(device_sn)
+        try:
+            yield self
+        finally:
+            if previous_sn is not None and previous_sn != device_sn:
+                self.set_device_by_serial_number(previous_sn)
+            self._reporter.add_message(
+                self._REPORTER_ROLE_NAME,
+                f"temporary_select({device_sn!r}) -> restored",
+            )
 
     def _screenshot_without_reporting(self) -> Image.Image:
         device: AndroidDevice = self._get_selected_device()

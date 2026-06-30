@@ -1,13 +1,18 @@
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Literal
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
+from typing_extensions import Self
 
 from askui.models.shared.tool_tags import ToolTags
 from askui.utils.pdf_utils import PdfSource
 
 if TYPE_CHECKING:
+    from askui.tools.askui.agent_os_target_computer import (
+        ComputerTarget,
+    )
     from askui.tools.askui.askui_ui_controller_grpc.generated import (
         Controller_V1_pb2 as controller_v1_pbs,
     )
@@ -214,7 +219,7 @@ class DisplaysListResponse(BaseModel):
 InputEvent = ClickEvent
 
 
-class AgentOs(ABC):
+class ComputerAgentOS(ABC):
     """
     Abstract base class for Agent OS. Cannot be instantiated directly.
 
@@ -683,6 +688,55 @@ class AgentOs(ABC):
         """
         raise NotImplementedError
 
+    def add_agent_os_target_computer(
+        self, agent_os_target_computer: "ComputerTarget"
+    ) -> "ComputerTarget":
+        """Register an additional target computer. Auto-connects if connected."""
+        raise NotImplementedError
+
+    def reset_agent_os_target_computers(
+        self,
+        agent_os_target_computers: "list[ComputerTarget] | None" = None,
+    ) -> None:
+        """Disconnect (if connected) and replace the target computer list."""
+        raise NotImplementedError
+
+    def describe_agent_os_target_computers(self) -> list[str]:
+        """Return the `repr()` string of every registered target computer."""
+        raise NotImplementedError
+
+    def get_current_computer_target_id(self, report: bool = True) -> str:
+        """Return the `computer_id` of the currently active target computer."""
+        raise NotImplementedError
+
+    def switch_agent_os_target_computer(self, computer_id: str) -> "ComputerTarget":
+        """Switch the active target computer by its `computer_id`."""
+        raise NotImplementedError
+
+    def temporary_select(self, computer_id: str) -> AbstractContextManager[Self]:
+        """
+        Temporarily switch the active target computer for the duration of a `with`
+        block, then restore the previously-active target on exit (even if the
+        block raises).
+
+        Args:
+            computer_id (str): Computer id of the target to activate inside the
+                block.
+
+        Returns:
+            AbstractContextManager[Self]: Context manager that yields this
+                `ComputerAgentOS` with the selected target active.
+
+        Example:
+            ```python
+            with agent_os.temporary_select('Remote-Machine') as remote_machine:
+                img = remote_machine.screenshot()
+                img.save("remote_machine.png")
+            # previous active target restored here
+            ```
+        """
+        raise NotImplementedError
+
     def get_file_names(self, absolute_directory_path: str) -> list[str]:
         """
         List file names in an absolute directory on the automation target
@@ -725,3 +779,13 @@ class AgentOs(ABC):
             NotImplementedError: If the implementation does not support this operation.
         """
         raise NotImplementedError
+
+
+AgentOs = ComputerAgentOS
+"""Deprecated alias for `ComputerAgentOS`, kept for backward compatibility.
+
+`AgentOs` was renamed to `ComputerAgentOS` to reflect that it is the
+computer-specific Agent OS interface (mouse, keyboard, displays, ...) rather
+than a universal abstraction across all device types. Prefer `ComputerAgentOS`
+in new code.
+"""

@@ -1,4 +1,5 @@
 import warnings
+from pathlib import Path
 
 from pydantic import ConfigDict, validate_call
 
@@ -6,6 +7,7 @@ from askui.agent_base import Agent
 from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback
 from askui.container import telemetry
+from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import (
     ActSettings,
     MessageSettings,
@@ -39,6 +41,43 @@ from .retry import Retry
 
 
 class WebAgent(Agent):
+    """Web automation agent backed by a Playwright browser.
+
+    Args:
+        reporters (list[Reporter] | None, optional): Reporters used for reporting.
+            Defaults to `None`.
+        settings (AgentSettings | None, optional): Agent settings. Defaults to
+            `None`.
+        retry (Retry | None, optional): Retry strategy. Defaults to `None`.
+        act_tools (list[Tool] | None, optional): Additional tools made available
+            during `act()`. Defaults to `None`.
+        callbacks (list[ConversationCallback] | None, optional): Conversation
+            callbacks. Defaults to `None`.
+        truncation_strategy (TruncationStrategy | None, optional): Message history
+            truncation strategy. Defaults to `None`.
+        secrets (list[Secret] | None, optional): Sensitive values (e.g. passwords)
+            the agent may use but the LLM must never see. The model only sees the
+            placeholder `<|secret|>NAME<|secret|>`; the real value is substituted at
+            execution time and kept out of the LLM prompt, reporter, logs and cache.
+            Also usable in deterministic `type()` and overridable per call via
+            `act(..., secrets=[...])`. Note: a secret typed into a visible field may
+            still appear in screenshots sent to the model; on-screen secrets cannot
+            currently be hidden. Defaults to `None`.
+        download_dir (str | Path | None, optional): Directory into which files
+            downloaded by the browser are automatically copied once they finish
+            (auto-renamed on filename collision). When `None`, downloads are left
+            in Playwright's temporary location and removed when the browser
+            closes. Defaults to `None`.
+
+    Example:
+        ```python
+        from askui import WebAgent
+
+        with WebAgent(download_dir="~/Downloads/askui") as agent:
+            agent.act("Open example.com and download the sample PDF")
+        ```
+    """
+
     @telemetry.record_call(
         exclude={
             "reporters",
@@ -46,6 +85,8 @@ class WebAgent(Agent):
             "act_tools",
             "callbacks",
             "truncation_strategy",
+            "secrets",
+            "download_dir",
         }
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
@@ -57,9 +98,11 @@ class WebAgent(Agent):
         act_tools: list[Tool] | None = None,
         callbacks: list[ConversationCallback] | None = None,
         truncation_strategy: TruncationStrategy | None = None,
+        secrets: list[Secret] | None = None,
+        download_dir: str | Path | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
-        self.os = PlaywrightAgentOs(reporter)
+        self.os = PlaywrightAgentOs(reporter, download_dir=download_dir)
         super().__init__(
             reporter=reporter,
             retry=retry,
@@ -68,6 +111,7 @@ class WebAgent(Agent):
             settings=settings,
             callbacks=callbacks,
             truncation_strategy=truncation_strategy,
+            secrets=secrets,
         )
         self.act_agent_os_facade = PlaywrightAgentOsFacade(
             self.os,

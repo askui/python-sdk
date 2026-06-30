@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager
 from typing import List, Literal
 
 from PIL import Image
+from typing_extensions import Self
 
 from askui.tools.android.uiautomator_hierarchy import UIElementCollection
 
@@ -500,5 +502,28 @@ class AndroidAgentOs(ABC):
     def get_ui_elements(self) -> UIElementCollection:
         """
         Gets the UI elements.
+        """
+        raise NotImplementedError
+
+    def temporary_select(self, device_sn: str) -> AbstractContextManager[Self]:
+        """
+        Temporarily switch the active device for the duration of a `with` block,
+        then restore the previously-active device on exit (even if the block
+        raises).
+
+        Args:
+            device_sn (str): Serial number of the device to activate inside the
+                block.
+
+        Returns:
+            AbstractContextManager[Self]: Context manager that yields this
+                `AndroidAgentOs` with `device_sn` active.
+
+        Example:
+            ```python
+            with android_agent_os.temporary_select('table_phone') as table_phone:
+                table_phone.tap(100, 200)
+            # previous active device restored here
+            ```
         """
         raise NotImplementedError

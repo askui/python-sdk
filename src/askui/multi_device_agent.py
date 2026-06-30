@@ -7,6 +7,7 @@ from askui.agent_settings import AgentSettings
 from askui.android_agent import AndroidAgent
 from askui.computer_agent import ComputerAgent
 from askui.locators.locators import Locator
+from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import GetSettings, LocateSettings
 from askui.models.shared.tools import Tool
 from askui.models.types.geometry import Point
@@ -31,6 +32,10 @@ class MultiDeviceAgent(Agent):
         act_tools (list[Tool] | None, optional): Additional tools for `act()`.
         android_device_sn (str | None, optional): Android device serial number
             to select on open.
+        secrets (list[Secret] | None, optional): Sensitive values the agent may use but
+            the LLM must never see. Applied to `act()` and to the composed
+            `computer`/`android` agents. The model only sees the placeholder
+            `<|secret|>NAME<|secret|>`; the real value is substituted at execution time.
 
     Example:
         ```python
@@ -51,6 +56,7 @@ class MultiDeviceAgent(Agent):
         retry: Retry | None = None,
         act_tools: list[Tool] | None = None,
         settings: AgentSettings | None = None,
+        secrets: list[Secret] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
 
@@ -59,13 +65,16 @@ class MultiDeviceAgent(Agent):
             reporter=reporter,
             retry=retry,
             settings=settings,
+            secrets=secrets,
         )
 
-        # Initialize the computer agent
+        # Initialize the computer agent (secrets also passed so that deterministic
+        # `agent.computer.*` calls resolve placeholders too).
         self._computer_agent: ComputerAgent = ComputerAgent(
             display=desktop_display,
             reporters=[reporter],
             settings=settings,
+            secrets=secrets,
         )
 
         # Initialize the Android agent
@@ -73,6 +82,7 @@ class MultiDeviceAgent(Agent):
             device=android_device_sn,
             reporters=[reporter],
             settings=settings,
+            secrets=secrets,
         )
 
         # Combine the tool collections of the computer and Android agents

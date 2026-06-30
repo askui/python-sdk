@@ -1,6 +1,6 @@
 """AskUI Python SDK"""
 
-__version__ = "0.36.0"
+__version__ = "0.37.0"
 
 import logging
 import os
@@ -34,6 +34,7 @@ from .models import (
     UrlImageSourceParam,
 )
 from .models.exceptions import AutomationError
+from .models.shared.secrets import Secret, SecretVault
 from .models.shared.settings import (
     DEFAULT_GET_RESOLUTION,
     DEFAULT_LOCATE_RESOLUTION,
@@ -47,6 +48,7 @@ from .models.shared.tools import Tool
 from .models.types.response_schemas import ResponseSchema, ResponseSchemaBase
 from .retry import ConfigurableRetry, Retry
 from .tools import ModifierKey, PcKey
+from .tools.askui import LocalComputerTarget, RemoteComputerTarget
 from .utils.image_utils import ImageSource
 from .utils.pdf_utils import PdfSource
 from .utils.source_utils import InputSource
@@ -72,6 +74,8 @@ except ImportError:
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
+    "RemoteComputerTarget",
+    "LocalComputerTarget",
     "Agent",
     "AutomationError",
     "ComputerAgent",
@@ -109,6 +113,8 @@ __all__ = [
     "ResponseSchema",
     "ResponseSchemaBase",
     "Retry",
+    "Secret",
+    "SecretVault",
     "TextBlockParam",
     "TextCitationParam",
     "Tool",

@@ -35,7 +35,8 @@ from askui.models.shared.agent_message_param import (
     ToolResultBlockParam,
     ToolUseBlockParam,
 )
-from askui.tools import AgentOs
+from askui.models.shared.secrets import SecretVault
+from askui.tools import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.utils.image_utils import ImageSource, base64_to_image
 from askui.utils.pdf_utils import PdfSource
@@ -390,23 +391,23 @@ class _McpToolAdapter(Tool):
 
 
 class ToolWithAgentOS(Tool):
-    """Tool base class  that has an AgentOs available."""
+    """Tool base class that has a ComputerAgentOS available."""
 
     def __init__(
         self,
         required_tags: list[str],
-        agent_os: AgentOs | AndroidAgentOs | None = None,
+        agent_os: ComputerAgentOS | AndroidAgentOs | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs, required_tags=required_tags)
-        self._agent_os: AgentOs | AndroidAgentOs | None = agent_os
+        self._agent_os: ComputerAgentOS | AndroidAgentOs | None = agent_os
 
     @property
-    def agent_os(self) -> AgentOs | AndroidAgentOs:
-        """Get the agent OS.
+    def agent_os(self) -> ComputerAgentOS | AndroidAgentOs:
+        """Get the AgentOS.
 
         Returns:
-            AgentOs | AndroidAgentOs: The agent OS instance.
+            ComputerAgentOS | AndroidAgentOs: The AgentOS instance.
         """
         if self._agent_os is None:
             msg = (
@@ -418,11 +419,11 @@ class ToolWithAgentOS(Tool):
         return self._agent_os
 
     @agent_os.setter
-    def agent_os(self, agent_os: AgentOs | AndroidAgentOs) -> None:
+    def agent_os(self, agent_os: ComputerAgentOS | AndroidAgentOs) -> None:
         self._agent_os = agent_os
 
     def is_agent_os_initialized(self) -> bool:
-        """Check if the agent OS is initialized."""
+        """Check if the AgentOS is initialized."""
         return self._agent_os is not None
 
 
@@ -501,21 +502,32 @@ class ToolCollection:
         tools: list[Tool] | None = None,
         mcp_client: McpClientProtocol | None = None,
         include: set[str] | None = None,
-        agent_os_list: list[AgentOs | AndroidAgentOs] | None = None,
+        agent_os_list: list[ComputerAgentOS | AndroidAgentOs] | None = None,
+        secret_vault: SecretVault | None = None,
     ) -> None:
         self._mcp_client = mcp_client
         self._include = include
-        self._agent_os_list: list[AgentOs | AndroidAgentOs] = []
+        self._agent_os_list: list[ComputerAgentOS | AndroidAgentOs] = []
         self._tools: list[Tool] = tools or []
+        self._secret_vault: SecretVault = secret_vault or SecretVault()
         if agent_os_list:
             for agent_os in agent_os_list:
                 self.add_agent_os(agent_os)
 
-    def add_agent_os(self, agent_os: AgentOs | AndroidAgentOs) -> None:
-        """Add an agent OS to the collection.
+    @property
+    def secret_vault(self) -> SecretVault:
+        """The secret vault used to substitute placeholders in tool inputs."""
+        return self._secret_vault
+
+    @secret_vault.setter
+    def secret_vault(self, secret_vault: SecretVault) -> None:
+        self._secret_vault = secret_vault
+
+    def add_agent_os(self, agent_os: ComputerAgentOS | AndroidAgentOs) -> None:
+        """Add an AgentOS to the collection.
 
         Args:
-            agent_os (AgentOs | AndroidAgentOs): The agent OS instance to add.
+            agent_os (ComputerAgentOS | AndroidAgentOs): The AgentOS instance to add.
         """
         self._agent_os_list.append(agent_os)
 
@@ -575,12 +587,23 @@ class ToolCollection:
         """Reset the tools in the collection with new tools."""
         self._tools = tools or []
 
-    def get_agent_os_by_tags(self, tags: list[str]) -> AgentOs | AndroidAgentOs:
-        """Get an agent OS by tags."""
+    def get_agent_os_by_tags(
+        self, required_tags: list[str]
+    ) -> ComputerAgentOS | AndroidAgentOs:
+        """
+        Find the first registered AgentOS whose tags are a superset of
+        `required_tags`.
+
+        Every tag in `required_tags` must appear in the AgentOS's tags; the
+        AgentOS may declare additional tags beyond those.
+
+        Raises:
+            ValueError: when no registered AgentOS satisfies the required tags.
+        """
         for agent_os in self._agent_os_list:
-            if all(tag in agent_os.tags for tag in tags):
+            if all(required in agent_os.tags for required in required_tags):
                 return agent_os
-        msg = f"Agent OS with tags [{', '.join(tags)}] not found"
+        msg = f"No AgentOS satisfies required tags [{', '.join(required_tags)}]"
         raise ValueError(msg)
 
     def _initialize_tools(self) -> None:
@@ -682,9 +705,14 @@ class ToolCollection:
         tool: Tool,
     ) -> ToolResultBlockParam:
         try:
-            tool_result: ToolCallResult = tool(**tool_use_block_param.input)  # type: ignore
+            tool_input = self._secret_vault.substitute(tool_use_block_param.input)
+            tool_result: ToolCallResult = tool(**tool_input)
+            # Redact secret values that a tool may echo back in its output, so they do
+            # not leak into the conversation history / model.
             return ToolResultBlockParam(
-                content=_convert_to_content(tool_result),
+                content=self._secret_vault.redact_content(
+                    _convert_to_content(tool_result)
+                ),
                 tool_use_id=tool_use_block_param.id,
             )
         except (AgentError, AutomationError):
@@ -697,7 +725,9 @@ class ToolCollection:
             )
             logger.info("%s - %s", tool_use_block_param.name, error_message)
             return ToolResultBlockParam(
-                content=f"Tool raised an unexpected error: {error_message}",
+                content=self._secret_vault.redact(
+                    f"Tool raised an unexpected error: {error_message}"
+                ),
                 is_error=True,
                 tool_use_id=tool_use_block_param.id,
             )
@@ -708,9 +738,10 @@ class ToolCollection:
         tool_use_block_param: ToolUseBlockParam,
     ) -> ToolCallResult:
         async with mcp_client:
+            tool_input = self._secret_vault.substitute(tool_use_block_param.input)
             return await mcp_client.call_tool(
                 tool_use_block_param.name,
-                tool_use_block_param.input,  # type: ignore[arg-type]
+                tool_input,
             )
 
     def _run_mcp_tool(
@@ -727,8 +758,9 @@ class ToolCollection:
         try:
             call_mcp_tool_sync = syncify(self._call_mcp_tool, raise_sync_error=False)
             result = call_mcp_tool_sync(self._mcp_client, tool_use_block_param)
+            # Redact secret values an MCP tool may echo back in its output.
             return ToolResultBlockParam(
-                content=_convert_to_content(result),
+                content=self._secret_vault.redact_content(_convert_to_content(result)),
                 tool_use_id=tool_use_block_param.id,
             )
         except AutomationError:
@@ -745,7 +777,7 @@ class ToolCollection:
                     e,
                 )
             return ToolResultBlockParam(
-                content=str(e),
+                content=self._secret_vault.redact(str(e)),
                 is_error=True,
                 tool_use_id=tool_use_block_param.id,
             )
@@ -755,4 +787,5 @@ class ToolCollection:
             tools=self._tools + other._tools,
             mcp_client=other._mcp_client or self._mcp_client,
             agent_os_list=self._agent_os_list + other._agent_os_list,
+            secret_vault=other._secret_vault or self._secret_vault,
         )

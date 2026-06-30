@@ -1,14 +1,18 @@
 from askui.models.shared import ComputerBaseTool
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 
 
 class ComputerTypeTool(ComputerBaseTool):
     """Computer Type Tool"""
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="type",
-            description="Type text on the computer.",
+            description=(
+                "Type text on the computer. To enter a secret/sensitive value, pass "
+                "its placeholder `<|secret|>NAME<|secret|>` as the text; the real "
+                "value is substituted securely at runtime and is hidden from you."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {

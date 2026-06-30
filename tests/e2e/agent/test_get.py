@@ -19,7 +19,7 @@ from askui.models.models import GetModel
 from askui.models.shared.settings import GetSettings
 from askui.models.types.response_schemas import ResponseSchema
 from askui.reporting import Reporter
-from askui.tools.toolbox import AgentToolbox
+from askui.tools.agent_os import ComputerAgentOS
 from askui.utils.source_utils import Source
 
 
@@ -97,7 +97,7 @@ class BrowserContextResponse(ResponseSchemaBase):
 )
 def test_get(
     vision_agent: ComputerAgent,
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel | None,
@@ -112,7 +112,6 @@ def test_get(
             settings=AgentSettings(
                 image_qa_provider=_GetModelImageQAProvider(get_model)
             ),
-            tools=agent_toolbox_mock,
             reporters=[simple_html_reporter],
         ) as agent:
             url = agent.get(
@@ -142,14 +141,13 @@ def test_get(
     ],
 )
 def test_get_with_pdf_with_gemini_model(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_pdf: pathlib.Path,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -180,7 +178,7 @@ def test_get_with_pdf_with_gemini_model(
     ],
 )
 def test_get_with_pdf_too_large(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_pdf: pathlib.Path,
@@ -189,7 +187,6 @@ def test_get_with_pdf_too_large(
     mocker.patch("askui.models.askui.get_model.MAX_FILE_SIZE_BYTES", 1)
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         with pytest.raises(ValueError, match="PDF file size exceeds the limit"):
@@ -232,14 +229,13 @@ def test_get_with_pdf_too_large_with_default_model(
     ],
 )
 def test_get_with_xlsx_with_gemini_model(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_excel: pathlib.Path,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -279,14 +275,13 @@ class SalaryResponse(ResponseSchemaBase):
     ],
 )
 def test_get_with_xlsx_with_gemini_model_with_response_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     get_model: GetModel,
     path_fixtures_dummy_excel: pathlib.Path,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -325,7 +320,7 @@ def test_get_with_docs_with_default_model(
 
 
 def test_get_with_fallback_model(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
 ) -> None:
@@ -338,7 +333,6 @@ def test_get_with_fallback_model(
             image_qa_provider=_GetModelImageQAProvider(askui_get_model)
         ),
         reporters=[simple_html_reporter],
-        tools=agent_toolbox_mock,
     ) as agent:
         url = agent.get(
             "What is the current url shown in the url bar?",
@@ -393,7 +387,7 @@ def test_get_with_response_schema_with_default_value(
 )
 def test_get_with_response_schema(
     vision_agent: ComputerAgent,
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel | None,
@@ -409,7 +403,6 @@ def test_get_with_response_schema(
             settings=AgentSettings(
                 image_qa_provider=_GetModelImageQAProvider(get_model)
             ),
-            tools=agent_toolbox_mock,
             reporters=[simple_html_reporter],
         ) as agent:
             response = agent.get(
@@ -434,14 +427,13 @@ def test_get_with_response_schema(
     ],
 )
 def test_get_with_nested_and_inherited_response_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -473,14 +465,13 @@ class LinkedListNode(ResponseSchemaBase):
     ],
 )
 def test_get_with_recursive_response_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         with pytest.raises(
@@ -507,14 +498,13 @@ def test_get_with_recursive_response_schema(
     ],
 )
 def test_get_with_string_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -545,14 +535,13 @@ def test_get_with_string_schema(
     ],
 )
 def test_get_with_boolean_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -577,14 +566,13 @@ def test_get_with_boolean_schema(
     ],
 )
 def test_get_with_integer_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -609,14 +597,13 @@ def test_get_with_integer_schema(
     ],
 )
 def test_get_with_float_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -641,14 +628,13 @@ def test_get_with_float_schema(
     ],
 )
 def test_get_returns_str_when_no_schema_specified(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -675,14 +661,13 @@ class Basis(ResponseSchemaBase):
     ],
 )
 def test_get_with_basis_schema(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -715,14 +700,13 @@ class BasisWithNestedRootModel(ResponseSchemaBase):
     ],
 )
 def test_get_with_nested_root_model(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
 ) -> None:
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(
@@ -774,7 +758,7 @@ class PageDom(ResponseSchemaBase):
     ],
 )
 def test_get_with_deeply_nested_response_schema_with_model_that_does_not_support_recursion(
-    agent_toolbox_mock: AgentToolbox,
+    agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
     simple_html_reporter: Reporter,
     github_login_screenshot: PILImage.Image,
     get_model: GetModel,
@@ -786,7 +770,6 @@ def test_get_with_deeply_nested_response_schema_with_model_that_does_not_support
     """
     with ComputerAgent(
         settings=AgentSettings(image_qa_provider=_GetModelImageQAProvider(get_model)),
-        tools=agent_toolbox_mock,
         reporters=[simple_html_reporter],
     ) as agent:
         response = agent.get(

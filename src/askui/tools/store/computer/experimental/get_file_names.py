@@ -1,5 +1,5 @@
 from askui.models.shared import ComputerBaseTool
-from askui.tools.agent_os import AgentOs
+from askui.tools.agent_os import ComputerAgentOS
 
 
 class ComputerGetFileNamesTool(ComputerBaseTool):
@@ -23,7 +23,7 @@ class ComputerGetFileNamesTool(ComputerBaseTool):
         ```
     """
 
-    def __init__(self, agent_os: AgentOs | None = None) -> None:
+    def __init__(self, agent_os: ComputerAgentOS | None = None) -> None:
         super().__init__(
             name="get_file_names_tool",
             description=(
