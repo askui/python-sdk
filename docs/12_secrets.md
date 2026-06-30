@@ -84,6 +84,7 @@ with ComputerAgent(secrets=secrets) as agent:
 Redaction is a best-effort safety net; placeholder usage is the primary, reliable path. Be aware of the following:
 
 - **Screenshots are not protected.** A secret typed into a *visible* field can still appear in subsequent screenshots sent to the model (and in `get()`/OCR over such a screen). On-screen secrets cannot currently be hidden.
+- **Reports can still contain secrets.** Execution reports embed screenshots, so any secret visible on screen will show up in the report. Text fields produced by the agent are redacted, but on-screen values are not — treat reports as potentially containing secrets and store/share them accordingly.
 - **Exact-substring redaction only.** Transformed forms (base64-, URL-encoded, or partial) of a secret value are not caught.
 - **Very short values (< 4 characters) are not redacted**, to avoid over-redacting unrelated text. The placeholder path still works for short values.
 
