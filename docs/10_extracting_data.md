@@ -51,11 +51,11 @@ pip install "askui[office-document]"
 
 **Model Compatibility Matrix**
 
-| File Format         | AskUI Gemini | Anthropic Claude | Google Gemini
-| ------------------- | ------------ | ---------------- | ----------
-| PDF (.pdf)          | ✅           | ❌               | ✅
-| Excel (.xlsx, .xls) | ✅           | ✅               | ✅
-| Word (.docx, .doc)  | ✅           | ✅               | ✅
+| File Format         | AskUI Gemini | Anthropic Claude | Google Gemini | OpenAI
+| ------------------- | ------------ | ---------------- | ------------- | ------
+| PDF (.pdf)          | ✅           | ✅               | ✅            | ✅
+| Excel (.xlsx, .xls) | ✅           | ✅               | ✅            | ❌
+| Word (.docx, .doc)  | ✅           | ✅               | ✅            | ❌
 
 **General Limitations**
 - **Processing Model Restriction**: not all models support all document formats
@@ -66,23 +66,29 @@ pip install "askui[office-document]"
 ### 📄 PDF Files (.pdf)
 
 - **MIME Types**: `application/pdf`
-- **Maximum File Size**: 20MB
-- **Processing Method**: **Depends on Usage Context**
+- **Maximum File Size**: 32MB
+- **Processing Method**: the PDF is passed to the model unchanged (every page as both text and image), so the model can reason about text, tables, charts, and layout. No Markdown conversion is performed.
 
 
 **Processing Workflow for PDF Files:**
 ```mermaid
 graph TD
     A[Call agent.get with PDF] --> B[Load as PdfSource]
-    B --> C[Send directly as binary to Gemini]
-    C --> D[Gemini processes content]
-    D --> E[Return results directly]
-    E --> F[No storage - process again for next call]
+    B --> C{Model provider}
+    C -->|Anthropic Claude| D[Send as base64 document block]
+    C -->|OpenAI| E[Send as base64 file content part]
+    C -->|AskUI / Google Gemini| F[Send directly as binary]
+    D --> G[Model processes content]
+    E --> G
+    F --> G
+    G --> H[Return results directly]
+    H --> I[No storage - process again for next call]
 ```
 
 **PDF-Specific Limitations**
 
-- **20MB file size limit** for PDF files
+- **32MB file size limit** for PDF files. Larger files raise `PdfTooLargeError` before any request is sent.
+- **No caching**: the PDF is re-sent to the model on every `get()` call.
 
 ### 📊 Excel Files (.xlsx, .xls)
 
