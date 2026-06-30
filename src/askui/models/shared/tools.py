@@ -1,3 +1,4 @@
+import base64
 import logging
 import re
 import types
@@ -14,17 +15,22 @@ from fastmcp.client.client import CallToolResult, ProgressHandler
 from fastmcp.tools import Tool as FastMcpTool
 from fastmcp.utilities.types import Image as FastMcpImage
 from mcp import Tool as McpTool
+from mcp.types import BlobResourceContents as McpBlobResourceContents
+from mcp.types import EmbeddedResource as McpEmbeddedResource
 from mcp.types import ImageContent as McpImageContent
 from mcp.types import TextContent as McpTextContent
+from mcp.types import TextResourceContents as McpTextResourceContents
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PrivateAttr
 from typing_extensions import Self
 
 from askui.models.exceptions import AutomationError
 from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     CacheControlEphemeralParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     TextBlockParam,
     ToolParam,
@@ -35,10 +41,11 @@ from askui.models.shared.secrets import SecretVault
 from askui.tools import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.utils.image_utils import ImageSource, base64_to_image
+from askui.utils.pdf_utils import MAX_PDF_SIZE_BYTES, PdfSource
 
 logger = logging.getLogger(__name__)
 
-PrimitiveToolCallResult = Image.Image | None | str | BaseModel
+PrimitiveToolCallResult = Image.Image | None | str | BaseModel | PdfSource
 
 ToolCallResult = (
     PrimitiveToolCallResult
@@ -53,40 +60,80 @@ IMAGE_MEDIA_TYPES_SUPPORTED: list[
 ] = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 
+def _convert_mcp_resource(
+    resource: McpTextResourceContents | McpBlobResourceContents,
+) -> TextBlockParam | DocumentBlockParam | None:
+    """Convert an MCP embedded resource into a content block.
+
+    Text resources become a text block; PDF blob resources become a document
+    block. Other binary resources are unsupported and dropped.
+    """
+    if isinstance(resource, McpTextResourceContents):
+        return TextBlockParam(text=resource.text)
+    if resource.mimeType == "application/pdf":
+        # ``blob`` is base64; the decoded size is ~3/4 of its length.
+        decoded_size = len(resource.blob) * 3 // 4
+        if decoded_size > MAX_PDF_SIZE_BYTES:
+            logger.warning(
+                "Dropping PDF resource exceeding the maximum supported size",
+                extra={
+                    "size_bytes": decoded_size,
+                    "max_size_bytes": MAX_PDF_SIZE_BYTES,
+                },
+            )
+            return None
+        return DocumentBlockParam(source=Base64PdfSourceParam(data=resource.blob))
+    logger.warning(
+        "Unsupported embedded resource media type",
+        extra={"media_type": resource.mimeType},
+    )
+    return None
+
+
+def _convert_call_tool_result(
+    result: CallToolResult,
+) -> list[TextBlockParam | ImageBlockParam | DocumentBlockParam]:
+    _result: list[TextBlockParam | ImageBlockParam | DocumentBlockParam] = []
+    for block in result.content:
+        match block.type:
+            case "text":
+                _result.append(TextBlockParam(text=block.text))
+            case "image":
+                media_type = block.mimeType
+                if media_type not in IMAGE_MEDIA_TYPES_SUPPORTED:
+                    logger.warning(
+                        "Unsupported image media type",
+                        extra={"media_type": media_type},
+                    )
+                    continue
+                _result.append(
+                    ImageBlockParam(
+                        source=Base64ImageSourceParam(
+                            media_type=media_type,
+                            data=block.data,
+                        )
+                    )
+                )
+            case "resource":
+                converted = _convert_mcp_resource(block.resource)
+                if converted is not None:
+                    _result.append(converted)
+            case _:
+                logger.warning(
+                    "Unsupported block type",
+                    extra={"block_type": block.type},
+                )
+    return _result
+
+
 def _convert_to_content(
     result: ToolCallResult,
-) -> list[TextBlockParam | ImageBlockParam]:
+) -> list[TextBlockParam | ImageBlockParam | DocumentBlockParam]:
     if result is None:
         return []
 
     if isinstance(result, CallToolResult):
-        _result: list[TextBlockParam | ImageBlockParam] = []
-        for block in result.content:
-            match block.type:
-                case "text":
-                    _result.append(TextBlockParam(text=block.text))
-                case "image":
-                    media_type = block.mimeType
-                    if media_type not in IMAGE_MEDIA_TYPES_SUPPORTED:
-                        logger.warning(
-                            "Unsupported image media type",
-                            extra={"media_type": media_type},
-                        )
-                        continue
-                    _result.append(
-                        ImageBlockParam(
-                            source=Base64ImageSourceParam(
-                                media_type=media_type,
-                                data=block.data,
-                            )
-                        )
-                    )
-                case _:
-                    logger.warning(
-                        "Unsupported block type",
-                        extra={"block_type": block.type},
-                    )
-        return _result
+        return _convert_call_tool_result(result)
 
     if isinstance(result, str):
         return [TextBlockParam(text=result)]
@@ -96,6 +143,14 @@ def _convert_to_content(
             item
             for sublist in [_convert_to_content(item) for item in result]
             for item in sublist
+        ]
+
+    if isinstance(result, PdfSource):
+        return [
+            DocumentBlockParam(
+                source=Base64PdfSourceParam(data=result.to_base64()),
+                title=result.filename,
+            )
         ]
 
     if isinstance(result, BaseModel):
@@ -128,6 +183,16 @@ def _convert_to_mcp_content(
         src = ImageSource(result)
         return FastMcpImage(data=src.to_bytes(), format="png").to_image_content()
 
+    if isinstance(result, PdfSource):
+        return McpEmbeddedResource(
+            type="resource",
+            resource=McpBlobResourceContents(
+                uri=AnyUrl("resource://document.pdf"),
+                mimeType="application/pdf",
+                blob=result.to_base64(),
+            ),
+        )
+
     return result
 
 
@@ -137,11 +202,25 @@ def _convert_from_mcp_tool_call_result(
 ) -> PrimitiveToolCallResult:
     if isinstance(result, str):
         return result
+
+    if isinstance(result, McpEmbeddedResource):
+        resource = result.resource
+        if isinstance(resource, McpTextResourceContents):
+            return resource.text
+        if resource.mimeType == "application/pdf":
+            return PdfSource(base64.b64decode(resource.blob))
+        msg = (
+            "MCP tool returned an unsupported embedded resource media type: "
+            f"{resource.mimeType}. Expected a text resource or an "
+            "'application/pdf' blob resource."
+        )
+        raise McpToolAdapterException(tool_name, msg)
+
     if not isinstance(result, (McpTextContent, McpImageContent)):
         unexpected_type = type(result).__name__
         msg = (
             f"MCP tool returned unexpected content type: {unexpected_type}. "
-            "Expected McpTextContent or McpImageContent."
+            "Expected McpTextContent, McpImageContent, or McpEmbeddedResource."
         )
         raise McpToolAdapterException(tool_name, msg)
 
@@ -282,8 +361,9 @@ class Tool(BaseModel, ABC):
 
         Notes:
             The underlying callable must return values this adapter can turn
-            into text or image: `str`, `McpTextContent`, or `McpImageContent`
-            (or a `list` / `tuple` of those).
+            into text, image, or PDF: `str`, `McpTextContent`,
+            `McpImageContent`, or an `McpEmbeddedResource` (text or
+            `application/pdf` blob) - or a `list` / `tuple` of those.
             Any other types raise `McpToolAdapterException`.
 
         Example:

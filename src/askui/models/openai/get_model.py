@@ -17,7 +17,7 @@ from askui.models.shared.prompts import GetSystemPrompt
 from askui.models.types.response_schemas import ResponseSchema, to_response_schema
 from askui.prompts.get_prompts import SYSTEM_PROMPT_GET
 from askui.utils.excel_utils import OfficeDocumentSource
-from askui.utils.pdf_utils import PdfSource
+from askui.utils.pdf_utils import DEFAULT_PDF_FILENAME, PdfSource
 from askui.utils.source_utils import Source
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class OpenAIGetModel(GetModel):
 
     def _predict(
         self,
-        image_url: str,
+        source_part: dict[str, Any],
         instruction: str,
         prompt: GetSystemPrompt,
         response_schema: type[ResponseSchema] | None,
@@ -103,12 +103,7 @@ class OpenAIGetModel(GetModel):
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": image_url,
-                            },
-                        },
+                        source_part,
                         {"type": "text", "text": str(prompt) + instruction},
                     ],
                 }
@@ -148,17 +143,31 @@ class OpenAIGetModel(GetModel):
         response_schema: type[ResponseSchema] | None,
         get_settings: GetSettings,
     ) -> ResponseSchema | str:
-        if isinstance(source, (PdfSource, OfficeDocumentSource)):
+        if isinstance(source, OfficeDocumentSource):
             err_msg = (
-                "PDF or Office Document processing is not supported"
+                "Office Document processing is not supported"
                 " for OpenAI-compatible models"
             )
             raise NotImplementedError(err_msg)
 
         system_prompt = get_settings.system_prompt or SYSTEM_PROMPT_GET
 
+        if isinstance(source, PdfSource):
+            source_part: dict[str, Any] = {
+                "type": "file",
+                "file": {
+                    "filename": source.filename or DEFAULT_PDF_FILENAME,
+                    "file_data": source.to_data_url(),
+                },
+            }
+        else:
+            source_part = {
+                "type": "image_url",
+                "image_url": {"url": source.to_data_url()},
+            }
+
         response = self._predict(
-            image_url=source.to_data_url(),
+            source_part=source_part,
             instruction=query,
             prompt=system_prompt,
             response_schema=response_schema,

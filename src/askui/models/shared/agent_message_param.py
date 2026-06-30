@@ -49,6 +49,12 @@ class Base64ImageSourceParam(BaseModel):
     type: Literal["base64"] = "base64"
 
 
+class Base64PdfSourceParam(BaseModel):
+    data: str
+    media_type: Literal["application/pdf"] = "application/pdf"
+    type: Literal["base64"] = "base64"
+
+
 class CacheControlEphemeralParam(BaseModel):
     type: Literal["ephemeral"] = "ephemeral"
 
@@ -56,6 +62,13 @@ class CacheControlEphemeralParam(BaseModel):
 class ImageBlockParam(BaseModel):
     source: Base64ImageSourceParam | UrlImageSourceParam
     type: Literal["image"] = "image"
+    cache_control: CacheControlEphemeralParam | None = None
+
+
+class DocumentBlockParam(BaseModel):
+    source: Base64PdfSourceParam
+    type: Literal["document"] = "document"
+    title: str | None = None
     cache_control: CacheControlEphemeralParam | None = None
 
 
@@ -70,7 +83,7 @@ class ToolResultBlockParam(BaseModel):
     tool_use_id: str
     type: Literal["tool_result"] = "tool_result"
     cache_control: CacheControlEphemeralParam | None = None
-    content: str | list[TextBlockParam | ImageBlockParam]
+    content: str | list[TextBlockParam | ImageBlockParam | DocumentBlockParam]
     is_error: bool = False
 
 
@@ -96,6 +109,7 @@ class BetaRedactedThinkingBlock(BaseModel):
 
 ContentBlockParam = (
     ImageBlockParam
+    | DocumentBlockParam
     | TextBlockParam
     | ToolResultBlockParam
     | ToolUseBlockParam
@@ -135,11 +149,13 @@ class MessageParam(BaseModel):
 
 __all__ = [
     "Base64ImageSourceParam",
+    "Base64PdfSourceParam",
     "CacheControlEphemeralParam",
     "CitationCharLocationParam",
     "CitationContentBlockLocationParam",
     "CitationPageLocationParam",
     "ContentBlockParam",
+    "DocumentBlockParam",
     "ImageBlockParam",
     "MessageParam",
     "TextBlockParam",

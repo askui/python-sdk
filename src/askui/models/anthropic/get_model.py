@@ -4,7 +4,10 @@ from typing import Type
 
 from typing_extensions import override
 
-from askui.models.anthropic.messages_api import built_messages_for_get_and_locate
+from askui.models.anthropic.messages_api import (
+    built_messages_for_get_and_locate,
+    built_messages_for_get_pdf,
+)
 from askui.models.anthropic.settings import UnexpectedResponseError
 from askui.models.exceptions import (
     QueryNoResponseError,
@@ -68,9 +71,9 @@ class AnthropicGetModel(GetModel):
         response_schema: Type[ResponseSchema] | None,
         get_settings: GetSettings,
     ) -> ResponseSchema | str:
-        if isinstance(source, (PdfSource, OfficeDocumentSource)):
+        if isinstance(source, OfficeDocumentSource):
             err_msg = (
-                f"PDF or Office Document processing is not supported for the model: "
+                f"Office Document processing is not supported for the model: "
                 f"{self._model_id}"
             )
             raise NotImplementedError(err_msg)
@@ -78,14 +81,17 @@ class AnthropicGetModel(GetModel):
             if response_schema is not None:
                 error_msg = "Response schema is not yet supported for Anthropic"
                 raise NotImplementedError(error_msg)
-            target_size = compute_contained_size(
-                source.root.width,
-                source.root.height,
-                get_settings.resolution.width,
-                get_settings.resolution.height,
-            )
-            scaled_image = resize_image(source.root, target_size)
-            messages = built_messages_for_get_and_locate(scaled_image, query)
+            if isinstance(source, PdfSource):
+                messages = built_messages_for_get_pdf(source, query)
+            else:
+                target_size = compute_contained_size(
+                    source.root.width,
+                    source.root.height,
+                    get_settings.resolution.width,
+                    get_settings.resolution.height,
+                )
+                scaled_image = resize_image(source.root, target_size)
+                messages = built_messages_for_get_and_locate(scaled_image, query)
             message = self._messages_api.create_message(
                 messages=messages,
                 model_id=self._model_id,

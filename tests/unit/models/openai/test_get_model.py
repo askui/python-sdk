@@ -69,25 +69,37 @@ class TestOpenAIGetModel:
                 get_settings=GetSettings(),
             )
 
-    def test_pdf_source_not_supported(self) -> None:
+    def test_pdf_source_sends_file_part(self) -> None:
         mock_client = MagicMock()
-        source = MagicMock(spec=PdfSource)
+        mock_client.chat.completions.create.return_value = _make_completion("3 pages")
 
-        model = OpenAIGetModel(model_id="qwen2.5vl", client=mock_client)
-        with pytest.raises(NotImplementedError, match="PDF or Office Document"):
-            model.get(
-                query="Describe",
-                source=source,
-                response_schema=None,
-                get_settings=GetSettings(),
-            )
+        source = MagicMock(spec=PdfSource)
+        source.to_data_url.return_value = "data:application/pdf;base64,abc"
+        source.filename = "report.pdf"
+
+        model = OpenAIGetModel(model_id="gpt-4o", client=mock_client)
+        result = model.get(
+            query="How many pages?",
+            source=source,
+            response_schema=None,
+            get_settings=GetSettings(),
+        )
+
+        assert result == "3 pages"
+        content = mock_client.chat.completions.create.call_args.kwargs["messages"][0][
+            "content"
+        ]
+        file_part = next(part for part in content if part["type"] == "file")
+        assert file_part["file"]["file_data"] == "data:application/pdf;base64,abc"
+        # The PDF's real file name is forwarded to OpenAI's ``file`` part.
+        assert file_part["file"]["filename"] == "report.pdf"
 
     def test_office_document_source_not_supported(self) -> None:
         mock_client = MagicMock()
         source = MagicMock(spec=OfficeDocumentSource)
 
         model = OpenAIGetModel(model_id="qwen2.5vl", client=mock_client)
-        with pytest.raises(NotImplementedError, match="PDF or Office Document"):
+        with pytest.raises(NotImplementedError, match="Office Document"):
             model.get(
                 query="Describe",
                 source=source,

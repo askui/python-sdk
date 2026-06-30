@@ -20,6 +20,7 @@ from askui.tools.agent_os import (
 )
 from askui.tools.askui.askui_controller import RenderObjectStyle  # noqa: TC001
 from askui.tools.coordinate_scaler import CoordinateScaler
+from askui.utils.pdf_utils import PdfSource
 
 if TYPE_CHECKING:
     from askui.tools.askui.agent_os_target_computer import (
@@ -375,7 +376,7 @@ class ComputerAgentOsFacade(ComputerAgentOS):
         """
         return self._agent_os.get_file_names(absolute_directory_path)
 
-    def get_file(self, path: str) -> Image.Image | str:
+    def get_file(self, path: str) -> Image.Image | PdfSource | str:
         """
         Read a file from the automation target.
 
@@ -383,7 +384,9 @@ class ComputerAgentOsFacade(ComputerAgentOS):
             path (str): File path on the target system.
 
         Returns:
-            Image.Image | str: Decoded file contents.
+            Image.Image | PdfSource | str: Decoded file contents. Images are
+                scaled to the model's coordinate space; PDFs and text pass
+                through unchanged.
         """
         response = self._agent_os.get_file(path)
         if isinstance(response, Image.Image):

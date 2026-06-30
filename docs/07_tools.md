@@ -61,6 +61,7 @@ Work with any agent type, no special dependencies required.
 
 **Examples:**
 - `PrintToConsoleTool()` - Print messages to console output
+- `LoadPdfTool(base_dir)` - Load a PDF from disk (relative to `base_dir`) and hand it to the model for analysis
 - Data processing and formatting tools
 - General utility functions
 
@@ -72,6 +73,7 @@ Require `ComputerAgentOS` and work with `ComputerAgent` for desktop automation.
 
 **Examples:**
 - `ComputerSaveScreenshotTool(base_dir)` - Save screenshots to disk
+- `ComputerGetFileTool()` - Read a file from the computer under automation; returns text, a decoded image, or a `PdfSource` for PDF documents (import from `askui.tools.store.computer.experimental`)
 - Window management
 - Device Automation
 
@@ -173,11 +175,12 @@ The constructor defines the tool’s metadata and input requirements:
 
 Contains the actual business logic that runs when the tool is invoked.
 
-Tools are flexible — they can return plain values, structured data, or even images.
+Tools are flexible — they can return plain values, structured data, images, or PDF documents.
 A tool’s __call__ method may return:
 - str
 - numbers or other primitive values
 - PIL.Image.Image — image output
+- PdfSource — a PDF document handed to the model as a document block (see below)
 - None
 - a list or tuple containing any of the above
 
@@ -192,6 +195,29 @@ image = downscale_image(image, max_dimension=2000)
 ```
 
 This preserves the original aspect ratio and only downscales images whose longest side exceeds the limit.
+
+**Returning a PDF:** A tool can return a `PdfSource` to hand a PDF document to the model, mirroring how returning a `PIL.Image.Image` produces an image. The PDF is forwarded unchanged — as a base64 `document` block to Anthropic Claude and as a `file` content part to OpenAI — so the model can reason about its text, tables, charts, and layout.
+
+```python
+from pathlib import Path
+
+from askui.models.shared.tools import Tool
+from askui.utils.pdf_utils import PdfSource
+
+class LoadInvoiceTool(Tool):
+    def __init__(self) -> None:
+        super().__init__(
+            name="load_invoice",
+            description="Loads the current invoice PDF for analysis.",
+            input_schema={"type": "object", "properties": {}},
+        )
+
+    def __call__(self) -> PdfSource:
+        # Pass a Path (or raw bytes) — a plain str is interpreted as PDF bytes, not a path.
+        return PdfSource(Path("invoices/latest.pdf"))
+```
+
+PDFs returned from a tool must not exceed **32MB**; a larger PDF raises `PdfTooLargeError`. When a `PdfSource` is created from a path, its file name is forwarded to the model as the document title.
 
 ### Complete Example
 
