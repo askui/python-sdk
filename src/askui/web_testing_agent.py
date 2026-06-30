@@ -37,6 +37,25 @@ from .retry import Retry
 
 
 class WebTestingAgent(WebVisionAgent):
+    """Web testing agent that extends `WebAgent` with feature, scenario and
+    execution management tools for authoring and running browser-based tests.
+
+    Args:
+        reporters (list[Reporter] | None, optional): Reporters used for reporting.
+            Defaults to `None`.
+        settings (AgentSettings | None, optional): Agent settings. Defaults to
+            `None`.
+        retry (Retry | None, optional): Retry strategy. Defaults to `None`.
+        secrets (list[Secret] | None, optional): Sensitive values (e.g. passwords)
+            the agent may use but the LLM must never see. The model only sees the
+            placeholder `<|secret|>NAME<|secret|>`; the real value is substituted at
+            execution time and kept out of the LLM prompt, reporter, logs and cache.
+            Also usable in deterministic `type()` and overridable per call via
+            `act(..., secrets=[...])`. Note: a secret typed into a visible field may
+            still appear in screenshots sent to the model; on-screen secrets cannot
+            currently be hidden. Defaults to `None`.
+    """
+
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def __init__(
         self,
