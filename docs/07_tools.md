@@ -382,7 +382,7 @@ with MultiDeviceAgent(android_device_sn="emulator-5554") as agent:
 
 #### Pinning a tool to a specific machine (auto-switch)
 
-The tag-based restriction is by device *type* (computer vs Android), not by an individual target machine. When you drive [multiple computer targets](12_multi_target_computers.md) from one agent, every `ComputerBaseTool` shares the same computer agent OS and runs against whichever target is currently *active*.
+The tag-based restriction is by device *type* (computer vs Android), not by an individual target machine. When you drive [multiple computer targets](13_multi_target_computers.md) from one agent, every `ComputerBaseTool` shares the same computer agent OS and runs against whichever target is currently *active*.
 
 To bind a tool to one specific machine, have it **auto-switch** to that target inside `__call__`. `self.agent_os.temporary_select(computer_id)` activates the given target for the duration of the block and restores the previously active target on exit (even if the body raises), so the tool always acts on its machine without disturbing the rest of the run:
 

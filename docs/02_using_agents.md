@@ -15,7 +15,7 @@ with ComputerAgent() as agent:
 
 **Default tools:** `screenshot`, `mouse_click`, `mouse_move`, `mouse_scroll`, `mouse_hold_down`, `mouse_release`, `type`, `keyboard_tap`, `keyboard_pressed`, `keyboard_release`, `get_mouse_position`, `get_system_info`, `list_displays`, `retrieve_active_display`, `set_active_display`, `list_agent_os_target_computers`, `switch_agent_os_target_computer`, `get_current_computer_target_id`
 
-A single `ComputerAgent` can also drive multiple machines (local and remote) at once. See [Multiple Target Computers](12_multi_target_computers.md).
+A single `ComputerAgent` can also drive multiple machines (local and remote) at once. See [Multiple Target Computers](13_multi_target_computers.md).
 
 ## AndroidAgent
 

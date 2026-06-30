@@ -124,7 +124,8 @@ Ready to build your first agent? Check out our documentation:
 9. **[Observability](docs/09_observability_telemetry_tracing.md)** - Monitor and debug agents
 10. **[Extracting Data](docs/10_extracting_data.md)** - Extracting structured data from screenshots and files
 11. **[Callbacks](docs/11_callbacks.md)** - Inject custom logic into the control loop
-12. **[Multiple Target Computers](docs/12_multi_target_computers.md)** - Drive several machines from one `ComputerAgent`
+12. **[Secrets](docs/12_secrets.md)** - Let agents use sensitive values without exposing them to the LLM
+13. **[Multiple Target Computers](docs/13_multi_target_computers.md)** - Drive several machines from one `ComputerAgent`
 
 **Official documentation:** [docs.askui.com](https://docs.askui.com)
 
