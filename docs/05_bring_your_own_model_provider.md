@@ -175,6 +175,72 @@ class MyVlmProvider(VlmProvider):
 
 ---
 
+## Image Scaling
+
+Before a screenshot is sent to a model, it is preprocessed by an **image scaler**. The scaler resizes the image to match the model's optimal input resolution, which affects both token cost and coordinate precision.
+
+All scalers inherit from `ImageScaler`:
+
+| Class | Behaviour | Used by |
+|-------|-----------|---------|
+| `PatchOptimizedImageScaler` | Finds the largest aspect-preserving size within a patch-based token budget (`max_edge`, `max_tokens`, `patch_size`) | `AskUIVlmProvider`, `AnthropicVlmProvider`, `OpenAIVlmProvider` |
+| `ContainedImageScaler` | Fits within `max_width` × `max_height` bounds | Default in `VlmProvider` base class |
+
+### Configuring the Maximum Image Edge
+
+All built-in providers accept an `image_edge_max` parameter that controls the maximum pixel dimension of screenshots sent to the model. You can also set it via the `ASKUI_VLM_MAX_IMAGE_EDGE` environment variable:
+
+```
+ASKUI_VLM_MAX_IMAGE_EDGE=1568
+```
+
+Or pass it directly:
+
+```python
+from askui import AgentSettings, ComputerAgent
+from askui.model_providers import AnthropicVlmProvider
+
+with ComputerAgent(settings=AgentSettings(
+    vlm_provider=AnthropicVlmProvider(image_edge_max=1568),
+)) as agent:
+    agent.act("Open settings")
+```
+
+### Using a Custom Image Scaler
+
+To fully replace the scaling strategy, pass an `image_scaler` instance. When provided, `image_edge_max` is ignored:
+
+```python
+from askui import AgentSettings, ComputerAgent
+from askui.model_providers import (
+    AnthropicVlmProvider,
+    ContainedImageScaler,
+)
+
+with ComputerAgent(settings=AgentSettings(
+    vlm_provider=AnthropicVlmProvider(
+        image_scaler=ContainedImageScaler(max_width=1280, max_height=720),
+    ),
+)) as agent:
+    agent.act("Open settings")
+```
+
+### Implementing a Custom Image Scaler
+
+For fully custom scaling logic, subclass `ImageScaler`:
+
+```python
+from PIL import Image
+from askui.model_providers import ImageScaler
+
+class MyImageScaler(ImageScaler):
+    def __call__(self, image: Image.Image) -> Image.Image:
+        # Your custom scaling logic
+        return image.resize((1024, 768), Image.Resampling.LANCZOS)
+```
+
+---
+
 ## Advanced: Injecting a Custom Client
 
 For full control over HTTP settings (timeouts, proxies, retries), you can inject a pre-configured client:

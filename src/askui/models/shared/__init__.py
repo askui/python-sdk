@@ -1,5 +1,12 @@
 from .android_base_tool import AndroidBaseTool
 from .computer_base_tool import ComputerBaseTool
+from .coordinate_space import (
+    NormalizedCoordinateSpace,
+    PixelCoordinateSpace,
+    ScaledCoordinateSpace,
+    VlmCoordinateSpace,
+)
+from .image_scaler import ContainedImageScaler, ImageScaler, PatchOptimizedImageScaler
 from .tool_tags import ToolTags
 
 try:
@@ -13,7 +20,14 @@ except ImportError:
 __all__ = [
     "AndroidBaseTool",
     "ComputerBaseTool",
+    "ContainedImageScaler",
+    "ImageScaler",
+    "PatchOptimizedImageScaler",
+    "NormalizedCoordinateSpace",
+    "PixelCoordinateSpace",
+    "ScaledCoordinateSpace",
     "ToolTags",
+    "VlmCoordinateSpace",
 ]
 
 if _PLAYWRIGHT_AVAILABLE:

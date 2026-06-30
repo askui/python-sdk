@@ -91,7 +91,6 @@ class AndroidAgent(Agent):
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
         self.os = PpadbAgentOs(device_identifier=device, reporter=reporter)
-        self.act_agent_os_facade = AndroidAgentOsFacade(self.os)
         super().__init__(
             reporter=reporter,
             retry=retry,
@@ -101,6 +100,11 @@ class AndroidAgent(Agent):
             callbacks=callbacks,
             truncation_strategy=truncation_strategy,
             secrets=secrets,
+        )
+        self.act_agent_os_facade = AndroidAgentOsFacade(
+            self.os,
+            coordinate_space=self._vlm_provider.coordinate_space,
+            image_scaler=self._vlm_provider.image_scaler,
         )
         self.act_tool_collection.add_agent_os(self.act_agent_os_facade)
         # Override default act settings with Android-specific settings

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import subprocess
+from pathlib import Path
 from typing import Literal
 
 from PIL import Image
@@ -9,6 +10,7 @@ from playwright.sync_api import (
     Browser,
     BrowserContext,
     BrowserType,
+    Download,
     Page,
     Playwright,
     ViewportSize,
@@ -20,6 +22,29 @@ from askui.reporting import NULL_REPORTER, Reporter
 from askui.utils.annotated_image import AnnotatedImage
 
 from ..agent_os import AgentOs, Display, DisplaySize, InputEvent, ModifierKey, PcKey
+
+
+def _to_unique_path(path: Path) -> Path:
+    """Return ``path`` or, if it already exists, a counter-suffixed variant.
+
+    For example, if ``report.pdf`` exists, returns ``report (1).pdf``; if that
+    exists too, ``report (2).pdf``, and so on. This keeps existing files from
+    being overwritten.
+
+    Args:
+        path (Path): The desired target path.
+
+    Returns:
+        Path: A path that does not currently exist on disk.
+    """
+    if not path.exists():
+        return path
+    counter = 1
+    while True:
+        candidate = path.with_name(f"{path.stem} ({counter}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 class PlaywrightAgentOs(AgentOs):
@@ -45,6 +70,11 @@ class PlaywrightAgentOs(AgentOs):
             Defaults to `True`.
         install_dependencies (bool, optional): Whether to install system dependencies
             (requires root permissions). Defaults to `False`.
+        download_dir (str | Path | None, optional): Directory into which files
+            downloaded by the browser are automatically copied once they finish.
+            When ``None``, downloads are left in Playwright's temporary location
+            (and deleted when the browser closes). The directory is created if it
+            does not exist. Defaults to `None`.
     """
 
     _REPORTER_ROLE_NAME: str = "PlaywrightAgentOS"
@@ -58,6 +88,7 @@ class PlaywrightAgentOs(AgentOs):
         slow_mo: int = 0,
         install_browser: bool = True,
         install_dependencies: bool = False,
+        download_dir: str | Path | None = None,
     ) -> None:
         self._browser_type = browser_type
         self._headless = headless
@@ -65,6 +96,7 @@ class PlaywrightAgentOs(AgentOs):
         self._slow_mo = slow_mo
         self._install_browser = install_browser
         self._install_dependencies = install_dependencies
+        self._download_dir = Path(download_dir) if download_dir is not None else None
 
         # Playwright objects
         self._playwright: Playwright | None = None
@@ -76,6 +108,9 @@ class PlaywrightAgentOs(AgentOs):
         # Event listening state
         self._listening = False
         self._event_queue: list[InputEvent] = []
+
+        # Files copied into `download_dir`, in the order they finished
+        self._downloaded_files: list[Path] = []
 
     def _install_playwright_browser(self) -> None:
         """Install Playwright browser if requested."""
@@ -162,12 +197,57 @@ class PlaywrightAgentOs(AgentOs):
             )
 
         self._page = self._context.new_page()
+        self._page.on("download", self._on_download)
         # Navigate to a blank page to ensure we have a working page
         self._page.goto("data:text/html,<html><body><h1>Starting...</h1></body></html>")
         self._reporter.add_message(
             self._REPORTER_ROLE_NAME,
             "Connected to playwright browser",
         )
+
+    def _on_download(self, download: Download) -> None:
+        """Copy a finished download into `download_dir`.
+
+        Registered as the page's ``download`` event handler. When `download_dir`
+        is configured, the file is saved there under its suggested filename
+        (auto-renamed on collision); otherwise the download is left untouched in
+        Playwright's temporary location. Failures are reported but never
+        propagated, so a failed download cannot break the automation run.
+
+        Args:
+            download (Download): The Playwright download to persist.
+        """
+        if self._download_dir is None:
+            return
+        # Use only the filename component to avoid path traversal from a
+        # server-suggested name such as "../../etc/passwd".
+        suggested_name = Path(download.suggested_filename).name
+        target = _to_unique_path(self._download_dir / suggested_name)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            download.save_as(target)
+        except Exception as e:  # noqa: BLE001 - never let a download break the run
+            self._reporter.add_message(
+                self._REPORTER_ROLE_NAME,
+                f"Failed to save download '{suggested_name}': {e}",
+            )
+            return
+        self._downloaded_files.append(target)
+        self._reporter.add_message(
+            self._REPORTER_ROLE_NAME,
+            f"Downloaded file saved to {target}",
+        )
+
+    @property
+    def downloaded_files(self) -> list[Path]:
+        """Files copied into `download_dir`, in the order they finished.
+
+        Returns:
+            list[Path]: Absolute paths of downloads saved so far this session.
+                Empty when no `download_dir` was configured or nothing was
+                downloaded yet.
+        """
+        return list(self._downloaded_files)
 
     @override
     def disconnect(self) -> None:
@@ -197,12 +277,15 @@ class PlaywrightAgentOs(AgentOs):
         )
 
     @override
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         """Capture a screenshot of the current page.
 
         Args:
             report (bool, optional): Whether to include the screenshot in
                 reporting. Defaults to `True`.
+            unscaled (bool, optional): Accepted for interface compatibility. This
+                agent OS always returns the native page resolution, so it has no
+                effect. Defaults to `False`.
 
         Returns:
             Image.Image: A PIL Image object containing the screenshot.

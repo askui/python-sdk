@@ -2,65 +2,67 @@ from typing import Literal
 
 from PIL import Image
 
+from askui.models.shared.coordinate_space import VlmCoordinateSpace
+from askui.models.shared.image_scaler import ImageScaler
 from askui.models.shared.tool_tags import ToolTags
 from askui.tools.agent_os import Display, ModifierKey, PcKey
+from askui.tools.coordinate_scaler import CoordinateScaler
 from askui.tools.playwright.agent_os import PlaywrightAgentOs
-from askui.utils.image_utils import scale_coordinates, scale_image_to_fit
 
 
 class PlaywrightAgentOsFacade(PlaywrightAgentOs):
     """Facade for `PlaywrightAgentOs` that adds coordinate scaling.
 
-    Screenshots are scaled down to a fixed target resolution so that the
-    AI model always sees a consistent image size.  Coordinate-based inputs
+    Screenshots are scaled using the provider's image scaler so that the
+    AI model sees an optimally sized image.  Coordinate-based inputs
     (``mouse_move``) are scaled back up to the real page resolution before
     being forwarded to the underlying agent OS.
 
     Args:
-        agent_os (PlaywrightAgentOs): The real Playwright agent OS to wrap.
+        agent_os (`PlaywrightAgentOs`): The real Playwright agent OS to wrap.
+        coordinate_space (`VlmCoordinateSpace`): Coordinate grid the model uses.
+        image_scaler (`ImageScaler`): Callable to preprocess screenshots.
     """
 
-    def __init__(self, agent_os: PlaywrightAgentOs) -> None:
+    def __init__(
+        self,
+        agent_os: PlaywrightAgentOs,
+        coordinate_space: VlmCoordinateSpace,
+        image_scaler: ImageScaler,
+    ) -> None:
         self._agent_os = agent_os
-        self._target_resolution: tuple[int, int] = (1024, 768)
-        self._real_screen_resolution: tuple[int, int] | None = None
+        self._scaler = CoordinateScaler(
+            coordinate_space=coordinate_space,
+            image_scaler=image_scaler,
+            fetch_real_resolution=self._fetch_real_resolution,
+            take_screenshot=self._take_silent_screenshot,
+        )
         self.tags = self._agent_os.tags + [ToolTags.SCALED_AGENT_OS.value]
+
+    def _fetch_real_resolution(self) -> tuple[int, int]:
+        return self._agent_os.screenshot(report=False).size
+
+    def _take_silent_screenshot(self) -> Image.Image:
+        return self.screenshot(report=False)
 
     def connect(self) -> None:
         self._agent_os.connect()
-        self._real_screen_resolution = self._agent_os.screenshot(
-            report=False,
+        self._scaler.real_screen_resolution = self._agent_os.screenshot(
+            report=False
         ).size
 
     def disconnect(self) -> None:
         self._agent_os.disconnect()
-        self._real_screen_resolution = None
+        self._scaler.real_screen_resolution = None
 
-    def screenshot(self, report: bool = True) -> Image.Image:
+    def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         screenshot = self._agent_os.screenshot(report=report)
-        self._real_screen_resolution = screenshot.size
-        return scale_image_to_fit(screenshot, self._target_resolution)
+        if unscaled:
+            return screenshot
+        return self._scaler.scale_screenshot(screenshot)
 
-    def _scale_coordinates(
-        self,
-        x: int,
-        y: int,
-        from_agent: bool = True,
-    ) -> tuple[int, int]:
-        if self._real_screen_resolution is None:
-            self._real_screen_resolution = self._agent_os.screenshot(
-                report=False,
-            ).size
-        return scale_coordinates(
-            (x, y),
-            self._real_screen_resolution,
-            self._target_resolution,
-            inverse=from_agent,
-        )
-
-    def mouse_move(self, x: int, y: int, duration: int = 500) -> None:
-        scaled_x, scaled_y = self._scale_coordinates(x, y)
-        # scaled_x, scaled_y = x, y
+    def mouse_move(self, x: float, y: float, duration: int = 500) -> None:
+        scaled_x, scaled_y = self._scaler.scale_coordinates(x, y)
         self._agent_os.mouse_move(scaled_x, scaled_y, duration)
 
     def type(self, text: str, typing_speed: int = 50) -> None:
