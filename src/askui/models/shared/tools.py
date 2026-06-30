@@ -1,3 +1,4 @@
+import base64
 import logging
 import re
 import types
@@ -15,11 +16,12 @@ from fastmcp.tools import Tool as FastMcpTool
 from fastmcp.utilities.types import Image as FastMcpImage
 from mcp import Tool as McpTool
 from mcp.types import BlobResourceContents as McpBlobResourceContents
+from mcp.types import EmbeddedResource as McpEmbeddedResource
 from mcp.types import ImageContent as McpImageContent
 from mcp.types import TextContent as McpTextContent
 from mcp.types import TextResourceContents as McpTextResourceContents
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, PrivateAttr
 from typing_extensions import Self
 
 from askui.models.exceptions import AutomationError
@@ -39,7 +41,7 @@ from askui.models.shared.secrets import SecretVault
 from askui.tools import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.utils.image_utils import ImageSource, base64_to_image
-from askui.utils.pdf_utils import PdfSource
+from askui.utils.pdf_utils import MAX_PDF_SIZE_BYTES, PdfSource
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,17 @@ def _convert_mcp_resource(
     if isinstance(resource, McpTextResourceContents):
         return TextBlockParam(text=resource.text)
     if resource.mimeType == "application/pdf":
+        # ``blob`` is base64; the decoded size is ~3/4 of its length.
+        decoded_size = len(resource.blob) * 3 // 4
+        if decoded_size > MAX_PDF_SIZE_BYTES:
+            logger.warning(
+                "Dropping PDF resource exceeding the maximum supported size",
+                extra={
+                    "size_bytes": decoded_size,
+                    "max_size_bytes": MAX_PDF_SIZE_BYTES,
+                },
+            )
+            return None
         return DocumentBlockParam(source=Base64PdfSourceParam(data=resource.blob))
     logger.warning(
         "Unsupported embedded resource media type",
@@ -136,6 +149,7 @@ def _convert_to_content(
         return [
             DocumentBlockParam(
                 source=Base64PdfSourceParam(data=result.to_base64()),
+                title=result.filename,
             )
         ]
 
@@ -169,6 +183,16 @@ def _convert_to_mcp_content(
         src = ImageSource(result)
         return FastMcpImage(data=src.to_bytes(), format="png").to_image_content()
 
+    if isinstance(result, PdfSource):
+        return McpEmbeddedResource(
+            type="resource",
+            resource=McpBlobResourceContents(
+                uri=AnyUrl("resource://document.pdf"),
+                mimeType="application/pdf",
+                blob=result.to_base64(),
+            ),
+        )
+
     return result
 
 
@@ -178,11 +202,25 @@ def _convert_from_mcp_tool_call_result(
 ) -> PrimitiveToolCallResult:
     if isinstance(result, str):
         return result
+
+    if isinstance(result, McpEmbeddedResource):
+        resource = result.resource
+        if isinstance(resource, McpTextResourceContents):
+            return resource.text
+        if resource.mimeType == "application/pdf":
+            return PdfSource(base64.b64decode(resource.blob))
+        msg = (
+            "MCP tool returned an unsupported embedded resource media type: "
+            f"{resource.mimeType}. Expected a text resource or an "
+            "'application/pdf' blob resource."
+        )
+        raise McpToolAdapterException(tool_name, msg)
+
     if not isinstance(result, (McpTextContent, McpImageContent)):
         unexpected_type = type(result).__name__
         msg = (
             f"MCP tool returned unexpected content type: {unexpected_type}. "
-            "Expected McpTextContent or McpImageContent."
+            "Expected McpTextContent, McpImageContent, or McpEmbeddedResource."
         )
         raise McpToolAdapterException(tool_name, msg)
 
@@ -323,8 +361,9 @@ class Tool(BaseModel, ABC):
 
         Notes:
             The underlying callable must return values this adapter can turn
-            into text or image: `str`, `McpTextContent`, or `McpImageContent`
-            (or a `list` / `tuple` of those).
+            into text, image, or PDF: `str`, `McpTextContent`,
+            `McpImageContent`, or an `McpEmbeddedResource` (text or
+            `application/pdf` blob) - or a `list` / `tuple` of those.
             Any other types raise `McpToolAdapterException`.
 
         Example:

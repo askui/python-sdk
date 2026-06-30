@@ -68,6 +68,7 @@ class ImageBlockParam(BaseModel):
 class DocumentBlockParam(BaseModel):
     source: Base64PdfSourceParam
     type: Literal["document"] = "document"
+    title: str | None = None
     cache_control: CacheControlEphemeralParam | None = None
 
 

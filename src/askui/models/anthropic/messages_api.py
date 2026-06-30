@@ -125,6 +125,7 @@ def built_messages_for_get_pdf(
                         source=Base64PdfSourceParam(
                             data=pdf_source.to_base64(),
                         ),
+                        title=pdf_source.filename,
                     ),
                     TextBlockParam(
                         text=prompt,

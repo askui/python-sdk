@@ -93,7 +93,8 @@ class LoadPdfTool(Tool):
 
         Raises:
             FileNotFoundError: If the PDF file does not exist at the specified path.
-            FileExistsError: If the path exists but is not a file (e.g., a directory).
+            IsADirectoryError: If the path exists but is a directory, not a file.
+            PdfTooLargeError: If the PDF exceeds the maximum supported size.
         """
         absolute_pdf_path = self._base_dir / pdf_path
 
@@ -103,9 +104,12 @@ class LoadPdfTool(Tool):
 
         if not absolute_pdf_path.is_file():
             error_msg = f"Path is not a file: {absolute_pdf_path}"
-            raise FileExistsError(error_msg)
+            raise IsADirectoryError(error_msg)
+
+        pdf_source = PdfSource(absolute_pdf_path)
+        pdf_source.validate_size()
 
         return (
             f"PDF was successfully loaded from {absolute_pdf_path}",
-            PdfSource(absolute_pdf_path),
+            pdf_source,
         )

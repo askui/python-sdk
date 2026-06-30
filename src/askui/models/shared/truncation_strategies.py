@@ -42,6 +42,9 @@ MAX_MESSAGES = 100_000
 IMAGE_REMOVED_PLACEHOLDER = "[Screenshot removed to reduce message history length]"
 """Text used to replace stripped base64 images."""
 
+DOCUMENT_REMOVED_PLACEHOLDER = "[PDF document removed to reduce message history length]"
+"""Text used to replace stripped base64 PDF documents."""
+
 
 def _has_orphaned_tool_results(msg: MessageParam) -> bool:
     """Check if a message contains tool_result blocks.
@@ -546,28 +549,38 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
                 removed += removed_in_msg
 
     @staticmethod
+    def _is_strippable_media(block: ContentBlockParam) -> bool:
+        """Whether `block` is a heavy base64 media block subject to stripping.
+
+        Covers base64 images and PDF documents alike - both are large base64
+        blobs that should not accumulate unbounded in the message history.
+        URL-based images are never stripped.
+        """
+        if isinstance(block, ImageBlockParam):
+            return isinstance(block.source, Base64ImageSourceParam)
+        return isinstance(block, DocumentBlockParam)
+
+    @classmethod
     def _count_base64_images(
+        cls,
         messages: list[MessageParam],
     ) -> int:
-        """Count total base64 image blocks across messages."""
+        """Count total strippable base64 media blocks (images and PDFs)."""
         count = 0
         for msg in messages:
             if isinstance(msg.content, str):
                 continue
             for block in msg.content:
-                if isinstance(block, ImageBlockParam) and isinstance(
-                    block.source, Base64ImageSourceParam
-                ):
+                if cls._is_strippable_media(block):
                     count += 1
                 elif isinstance(block, ToolResultBlockParam) and isinstance(
                     block.content, list
                 ):
-                    for nested in block.content:
-                        if isinstance(nested, ImageBlockParam) and isinstance(
-                            nested.source,
-                            Base64ImageSourceParam,
-                        ):
-                            count += 1
+                    count += sum(
+                        1
+                        for nested in block.content
+                        if cls._is_strippable_media(nested)
+                    )
         return count
 
     @staticmethod
@@ -597,6 +610,9 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
             ):
                 new_content.append(TextBlockParam(text=IMAGE_REMOVED_PLACEHOLDER))
                 stripped += 1
+            elif isinstance(block, DocumentBlockParam):
+                new_content.append(TextBlockParam(text=DOCUMENT_REMOVED_PLACEHOLDER))
+                stripped += 1
             elif isinstance(block, ToolResultBlockParam) and isinstance(
                 block.content, list
             ):
@@ -604,16 +620,19 @@ class SlidingImageWindowSummarizingTruncationStrategy(TruncationStrategy):
                     TextBlockParam | ImageBlockParam | DocumentBlockParam
                 ] = []
                 for nested in block.content:
-                    if (
-                        stripped < max_to_strip
-                        and isinstance(nested, ImageBlockParam)
-                        and isinstance(
-                            nested.source,
-                            Base64ImageSourceParam,
-                        )
+                    if stripped >= max_to_strip:
+                        new_nested.append(nested)
+                    elif isinstance(nested, ImageBlockParam) and isinstance(
+                        nested.source,
+                        Base64ImageSourceParam,
                     ):
                         new_nested.append(
                             TextBlockParam(text=IMAGE_REMOVED_PLACEHOLDER)
+                        )
+                        stripped += 1
+                    elif isinstance(nested, DocumentBlockParam):
+                        new_nested.append(
+                            TextBlockParam(text=DOCUMENT_REMOVED_PLACEHOLDER)
                         )
                         stripped += 1
                     else:

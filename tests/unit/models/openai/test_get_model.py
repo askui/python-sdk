@@ -75,6 +75,7 @@ class TestOpenAIGetModel:
 
         source = MagicMock(spec=PdfSource)
         source.to_data_url.return_value = "data:application/pdf;base64,abc"
+        source.filename = "report.pdf"
 
         model = OpenAIGetModel(model_id="gpt-4o", client=mock_client)
         result = model.get(
@@ -90,7 +91,8 @@ class TestOpenAIGetModel:
         ]
         file_part = next(part for part in content if part["type"] == "file")
         assert file_part["file"]["file_data"] == "data:application/pdf;base64,abc"
-        assert file_part["file"]["filename"] == "document.pdf"
+        # The PDF's real file name is forwarded to OpenAI's ``file`` part.
+        assert file_part["file"]["filename"] == "report.pdf"
 
     def test_office_document_source_not_supported(self) -> None:
         mock_client = MagicMock()

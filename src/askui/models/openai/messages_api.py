@@ -30,6 +30,7 @@ from askui.models.shared.agent_message_param import (
 from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
+from askui.utils.pdf_utils import DEFAULT_PDF_FILENAME
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def _document_block_to_openai(block: DocumentBlockParam) -> dict[str, Any]:
     return {
         "type": "file",
         "file": {
-            "filename": "document.pdf",
+            "filename": block.title or DEFAULT_PDF_FILENAME,
             "file_data": data_url,
         },
     }

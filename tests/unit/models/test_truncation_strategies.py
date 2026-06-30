@@ -5,7 +5,9 @@ from unittest.mock import MagicMock
 from askui.callbacks.conversation_callback import ConversationCallback
 from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
+    Base64PdfSourceParam,
     ContentBlockParam,
+    DocumentBlockParam,
     ImageBlockParam,
     MessageParam,
     TextBlockParam,
@@ -20,6 +22,7 @@ from askui.models.shared.truncation_strategies import (
 )
 
 IMAGE_REMOVED_PLACEHOLDER = "[Screenshot removed to reduce message history length]"
+DOCUMENT_REMOVED_PLACEHOLDER = "[PDF document removed to reduce message history length]"
 
 
 # ---------------------------------------------------------------------------
@@ -39,12 +42,26 @@ def _make_url_image_block() -> ImageBlockParam:
     )
 
 
+def _make_pdf_block() -> DocumentBlockParam:
+    return DocumentBlockParam(source=Base64PdfSourceParam(data="cGRm"))
+
+
 def _make_tool_result_with_image(tool_use_id: str = "tool_1") -> ToolResultBlockParam:
     return ToolResultBlockParam(
         tool_use_id=tool_use_id,
         content=[
             TextBlockParam(text="result text"),
             _make_base64_image_block(),
+        ],
+    )
+
+
+def _make_tool_result_with_pdf(tool_use_id: str = "tool_1") -> ToolResultBlockParam:
+    return ToolResultBlockParam(
+        tool_use_id=tool_use_id,
+        content=[
+            TextBlockParam(text="result text"),
+            _make_pdf_block(),
         ],
     )
 
@@ -189,6 +206,53 @@ class TestRemoveImages:
         assert tool_result.content[0].text == "result text"
         assert isinstance(tool_result.content[1], TextBlockParam)
         assert tool_result.content[1].text == IMAGE_REMOVED_PLACEHOLDER
+
+    def test_strips_oldest_pdf_documents(self) -> None:
+        strategy = _make_strategy(n_images_to_keep=1)
+        for i in range(3):
+            role = "user" if i % 2 == 0 else "assistant"
+            strategy.append_message(
+                MessageParam(role=role, content=[_make_pdf_block()])
+            )
+        truncated = strategy.truncated_messages
+        # Oldest two PDFs replaced by placeholders; most recent one preserved.
+        assert isinstance(truncated[0].content, list)
+        assert isinstance(truncated[0].content[0], TextBlockParam)
+        assert truncated[0].content[0].text == DOCUMENT_REMOVED_PLACEHOLDER
+        assert isinstance(truncated[1].content[0], TextBlockParam)
+        assert truncated[1].content[0].text == DOCUMENT_REMOVED_PLACEHOLDER
+        assert isinstance(truncated[2].content[0], DocumentBlockParam)
+
+    def test_strips_pdf_documents_inside_tool_results(self) -> None:
+        strategy = _make_strategy(n_images_to_keep=0)
+        strategy.append_message(
+            MessageParam(
+                role="user",
+                content=[_make_tool_result_with_pdf("tool_1")],
+            )
+        )
+        content = strategy.truncated_messages[0].content
+        assert isinstance(content, list)
+        tool_result = content[0]
+        assert isinstance(tool_result, ToolResultBlockParam)
+        assert isinstance(tool_result.content, list)
+        assert isinstance(tool_result.content[0], TextBlockParam)
+        assert tool_result.content[0].text == "result text"
+        assert isinstance(tool_result.content[1], TextBlockParam)
+        assert tool_result.content[1].text == DOCUMENT_REMOVED_PLACEHOLDER
+
+    def test_images_and_pdfs_share_the_keep_budget(self) -> None:
+        # n_images_to_keep counts heavy media (images + PDFs) combined.
+        strategy = _make_strategy(n_images_to_keep=1)
+        strategy.append_message(MessageParam(role="user", content=[_make_pdf_block()]))
+        strategy.append_message(
+            MessageParam(role="assistant", content=[_make_base64_image_block()])
+        )
+        truncated = strategy.truncated_messages
+        # The older PDF is stripped; the most recent media (the image) is kept.
+        assert isinstance(truncated[0].content[0], TextBlockParam)
+        assert truncated[0].content[0].text == DOCUMENT_REMOVED_PLACEHOLDER
+        assert isinstance(truncated[1].content[0], ImageBlockParam)
 
     def test_preserves_non_image_blocks(self) -> None:
         strategy = _make_strategy(n_images_to_keep=0)

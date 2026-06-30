@@ -17,7 +17,7 @@ from askui.models.shared.prompts import GetSystemPrompt
 from askui.models.types.response_schemas import ResponseSchema, to_response_schema
 from askui.prompts.get_prompts import SYSTEM_PROMPT_GET
 from askui.utils.excel_utils import OfficeDocumentSource
-from askui.utils.pdf_utils import PdfSource
+from askui.utils.pdf_utils import DEFAULT_PDF_FILENAME, PdfSource
 from askui.utils.source_utils import Source
 
 logger = logging.getLogger(__name__)
@@ -156,7 +156,7 @@ class OpenAIGetModel(GetModel):
             source_part: dict[str, Any] = {
                 "type": "file",
                 "file": {
-                    "filename": "document.pdf",
+                    "filename": source.filename or DEFAULT_PDF_FILENAME,
                     "file_data": source.to_data_url(),
                 },
             }

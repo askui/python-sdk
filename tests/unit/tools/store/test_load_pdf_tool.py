@@ -55,7 +55,7 @@ class TestLoadPdfTool:
         (tmp_path / "sub").mkdir()
         tool = LoadPdfTool(base_dir=tmp_path)
 
-        with pytest.raises(FileExistsError):
+        with pytest.raises(IsADirectoryError):
             tool(pdf_path="sub")
 
     def test_is_cacheable(self, tmp_path: Path) -> None:
