@@ -13,9 +13,7 @@ from askui.models.models import Point
 from askui.models.shared.settings import ActSettings, LocateSettings, MessageSettings
 from askui.models.shared.tools import Tool
 from askui.models.shared.truncation_strategies import TruncationStrategy
-from askui.prompts.act_prompts import (
-    create_computer_agent_prompt,
-)
+from askui.prompts.act_prompts import create_computer_agent_prompt
 from askui.tools.computer import (
     ComputerGetMousePositionTool,
     ComputerGetSystemInfoTool,
@@ -139,7 +137,7 @@ class ComputerAgent(Agent):
         self.act_settings = ActSettings(
             messages=MessageSettings(
                 system=create_computer_agent_prompt(),
-                thinking={"type": "enabled", "budget_tokens": 2048},
+                thinking={"type": "adaptive"},
             )
         )
 
