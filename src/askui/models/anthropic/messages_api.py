@@ -13,6 +13,7 @@ from anthropic.types.beta import (
     BetaCacheControlEphemeralParam,
     BetaContentBlockParam,
     BetaMessageParam,
+    BetaOutputConfigParam,
     BetaThinkingConfigParam,
     BetaToolChoiceParam,
     BetaToolUnionParam,
@@ -113,6 +114,7 @@ def _parse_to_anthropic_types(
     cache_control: CacheControlEphemeralParam | None = None,
     system: SystemPrompt | None = None,
     thinking: ThinkingConfigParam | None = None,
+    output_config: dict[str, Any] | None = None,
     tool_choice: ToolChoiceParam | None = None,
     temperature: float | None = None,
 ) -> Tuple[
@@ -121,6 +123,7 @@ def _parse_to_anthropic_types(
     BetaCacheControlEphemeralParam | Omit,
     str | Omit,
     BetaThinkingConfigParam | Omit,
+    BetaOutputConfigParam | Omit,
     BetaToolChoiceParam | Omit,
     float | Omit,
 ]:
@@ -149,6 +152,13 @@ def _parse_to_anthropic_types(
     _thinking = (
         cast("BetaThinkingConfigParam", thinking) if thinking is not None else omit
     )
+    # `output_config` carries `effort` (the string replacement for the integer
+    # `budget_tokens` used by older models) on models with adaptive thinking.
+    _output_config = (
+        cast("BetaOutputConfigParam", output_config)
+        if output_config is not None
+        else omit
+    )
     _tool_choice = (
         cast("BetaToolChoiceParam", tool_choice) if tool_choice is not None else omit
     )
@@ -160,6 +170,7 @@ def _parse_to_anthropic_types(
         _cache_control,
         _system,
         _thinking,
+        _output_config,
         _tool_choice,
         _temperature,
     )
@@ -196,12 +207,14 @@ class AnthropicMessagesApi(MessagesApi):
         # convert each message to anthropic BetaMessageParam type
         _messages = [from_message_param(message) for message in messages]
 
-        # Extract betas from provider_options
+        # Extract Anthropic-specific options from provider_options
         betas: list[str] | None = None
         cache_control: CacheControlEphemeralParam | None = None
+        output_config: dict[str, Any] | None = None
         if provider_options is not None:
             betas = provider_options.get("betas")
             cache_control = provider_options.get("cache_control")
+            output_config = provider_options.get("output_config")
 
         (
             _tools,
@@ -209,10 +222,18 @@ class AnthropicMessagesApi(MessagesApi):
             _cache_control,
             _system,
             _thinking,
+            _output_config,
             _tool_choice,
             _temperature,
         ) = _parse_to_anthropic_types(
-            tools, betas, cache_control, system, thinking, tool_choice, temperature
+            tools,
+            betas,
+            cache_control,
+            system,
+            thinking,
+            output_config,
+            tool_choice,
+            temperature,
         )
 
         response = self._client.beta.messages.create(  # type: ignore[misc]
@@ -224,6 +245,7 @@ class AnthropicMessagesApi(MessagesApi):
             betas=_betas,
             system=_system,
             thinking=_thinking,
+            output_config=_output_config,
             tool_choice=_tool_choice,
             temperature=_temperature,
             timeout=300.0,

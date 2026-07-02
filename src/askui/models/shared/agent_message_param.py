@@ -114,6 +114,13 @@ ThinkingConfigParam = dict[str, Any]
 ToolChoiceParam = dict[str, Any]
 ToolParam = dict[str, Any]
 
+# Effort controls how much the model thinks and acts on newer models that use
+# adaptive thinking (`thinking={"type": "adaptive"}`). It replaces the integer
+# `budget_tokens` used with `thinking={"type": "enabled", ...}` on older models.
+# Anthropic maps this to `output_config.effort`; providers that do not support
+# it (e.g. OpenAI chat) ignore it.
+EffortLevel = Literal["low", "medium", "high", "max"]
+
 
 class UsageParam(BaseModel):
     """Token usage statistics from model API calls."""
@@ -150,4 +157,5 @@ __all__ = [
     "UsageParam",
     "ThinkingConfigParam",
     "ToolChoiceParam",
+    "EffortLevel",
 ]
