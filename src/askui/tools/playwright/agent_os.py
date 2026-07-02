@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import subprocess
+import threading
 from pathlib import Path
 from typing import Literal
 
@@ -29,6 +30,19 @@ from ..agent_os import (
     ModifierKey,
     PcKey,
 )
+
+
+class DownloadError(RuntimeError):
+    """Raised when one or more browser downloads could not be saved completely.
+
+    Surfaced instead of leaving silently truncated files on disk (e.g. when a
+    download is still being copied while the browser is torn down).
+    """
+
+
+# Time to pump the Playwright event loop so a download that started right
+# before teardown surfaces its ``download`` event before the queue is drained.
+_DOWNLOAD_EVENT_GRACE_S = 0.1
 
 
 def _to_unique_path(path: Path) -> Path:
@@ -116,8 +130,15 @@ class PlaywrightAgentOs(ComputerAgentOS):
         self._listening = False
         self._event_queue: list[InputEvent] = []
 
-        # Files copied into `download_dir`, in the order they finished
+        # Download tracking state. `_pending_downloads` holds downloads whose
+        # copy has not run yet; they are drained on the main thread (never
+        # inside the event callback) so the copy runs deterministically and is
+        # awaited before the browser is torn down. `_download_errors` collects
+        # failures so they can be surfaced instead of leaving truncated files.
+        self._download_lock = threading.Lock()
+        self._pending_downloads: list[Download] = []
         self._downloaded_files: list[Path] = []
+        self._download_errors: list[str] = []
 
     def _install_playwright_browser(self) -> None:
         """Install Playwright browser if requested."""
@@ -213,37 +234,119 @@ class PlaywrightAgentOs(ComputerAgentOS):
         )
 
     def _on_download(self, download: Download) -> None:
-        """Copy a finished download into `download_dir`.
+        """Register a started download for deterministic saving.
 
-        Registered as the page's ``download`` event handler. When `download_dir`
-        is configured, the file is saved there under its suggested filename
-        (auto-renamed on collision); otherwise the download is left untouched in
-        Playwright's temporary location. Failures are reported but never
-        propagated, so a failed download cannot break the automation run.
+        Registered as the page's ``download`` event handler. The download is
+        only recorded here; the actual copy runs in `_flush_downloads` on the
+        main thread. Calling the blocking `save_as` from inside this sync-API
+        event callback is not guaranteed to run to completion, which truncated
+        large files when the browser was closed mid-copy.
 
         Args:
             download (Download): The Playwright download to persist.
         """
         if self._download_dir is None:
             return
+        with self._download_lock:
+            self._pending_downloads.append(download)
+        self._reporter.add_message(
+            self._REPORTER_ROLE_NAME,
+            f"Download started: '{Path(download.suggested_filename).name}'",
+        )
+
+    def _pump_event_loop(self, seconds: float) -> None:
+        """Pump the Playwright event loop for ``seconds``.
+
+        Lets queued events (such as a just-started ``download``) be delivered
+        to their handlers. Best effort: swallows errors as the page may already
+        be closing.
+        """
+        if self._page is None:
+            return
+        try:
+            self._page.wait_for_timeout(seconds * 1000)
+        except Exception:  # noqa: BLE001 - best effort; page may be closing
+            pass
+
+    def _deliver_and_flush_downloads(self) -> None:
+        """Deliver any just-started download events, then save all downloads.
+
+        Used at points where no other Playwright call is pumping the event loop
+        (teardown and the explicit wait), so a download triggered by the last
+        action is not missed.
+        """
+        if self._download_dir is None:
+            return
+        self._pump_event_loop(_DOWNLOAD_EVENT_GRACE_S)
+        self._flush_downloads()
+
+    def _flush_downloads(self) -> None:
+        """Copy all pending downloads into `download_dir`, blocking until done.
+
+        Runs on the main (Playwright) thread. Each failure is collected in
+        `_download_errors` rather than raised here, so a single failing download
+        neither aborts the remaining ones nor the teardown of other resources.
+        """
+        if self._download_dir is None:
+            return
+        with self._download_lock:
+            pending = self._pending_downloads
+            self._pending_downloads = []
+        for download in pending:
+            self._save_download(download)
+
+    def _save_download(self, download: Download) -> None:
+        assert self._download_dir is not None
         # Use only the filename component to avoid path traversal from a
         # server-suggested name such as "../../etc/passwd".
         suggested_name = Path(download.suggested_filename).name
         target = _to_unique_path(self._download_dir / suggested_name)
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
+            # `save_as` blocks until the download has fully finished and been
+            # copied to `target`, so running it here (on the main thread, before
+            # teardown) guarantees a complete file.
             download.save_as(target)
-        except Exception as e:  # noqa: BLE001 - never let a download break the run
-            self._reporter.add_message(
-                self._REPORTER_ROLE_NAME,
-                f"Failed to save download '{suggested_name}': {e}",
-            )
+        except Exception as e:  # noqa: BLE001 - collect, don't let one break the run
+            # Do not leave a partially written file masquerading as a complete
+            # download; remove it and surface the failure.
+            target.unlink(missing_ok=True)
+            error_msg = f"Failed to save download '{suggested_name}': {e}"
+            self._download_errors.append(error_msg)
+            self._reporter.add_message(self._REPORTER_ROLE_NAME, error_msg)
             return
         self._downloaded_files.append(target)
         self._reporter.add_message(
             self._REPORTER_ROLE_NAME,
             f"Downloaded file saved to {target}",
         )
+
+    def wait_until_downloads_complete(self) -> list[Path]:
+        """Block until all downloads started so far are fully saved to disk.
+
+        `save_as` blocks until each download has finished, so callers can use
+        this to obtain complete files mid-run without having to keep the
+        Playwright event loop alive themselves.
+
+        Returns:
+            list[Path]: Absolute paths of all downloads saved so far this
+                session.
+
+        Raises:
+            DownloadError: If one or more downloads could not be saved
+                completely.
+        """
+        self._deliver_and_flush_downloads()
+        self._raise_download_errors()
+        return list(self._downloaded_files)
+
+    def _raise_download_errors(self) -> None:
+        if not self._download_errors:
+            return
+        errors = self._download_errors
+        self._download_errors = []
+        error_msg = "Failed to complete downloads:\n" + "\n".join(errors)
+        raise DownloadError(error_msg)
 
     @property
     def downloaded_files(self) -> list[Path]:
@@ -258,9 +361,24 @@ class PlaywrightAgentOs(ComputerAgentOS):
 
     @override
     def disconnect(self) -> None:
-        """Terminates the connection to the browser."""
+        """Terminates the connection to the browser.
+
+        Any download triggered during the run is written to `download_dir`
+        completely before the page/context/browser is closed. If a download
+        cannot be saved, its partial file is removed and a `DownloadError` is
+        raised after teardown instead of leaving a silently truncated file.
+
+        Raises:
+            DownloadError: If one or more downloads could not be saved
+                completely.
+        """
         if self._listening:
             self.stop_listening()
+
+        # Drain in-flight downloads while the page/context/browser are still
+        # alive so `save_as` can run to completion. Otherwise Playwright aborts
+        # the copy and leaves a truncated file on disk.
+        self._deliver_and_flush_downloads()
 
         if self._page:
             self._page.close()
@@ -283,6 +401,8 @@ class PlaywrightAgentOs(ComputerAgentOS):
             "Disconnected from playwright os",
         )
 
+        self._raise_download_errors()
+
     @override
     def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         """Capture a screenshot of the current page.
@@ -303,6 +423,11 @@ class PlaywrightAgentOs(ComputerAgentOS):
 
         screenshot_bytes = self._page.screenshot(scale="css")
         screenshot = Image.open(io.BytesIO(screenshot_bytes))
+        # Taking the screenshot pumps the event loop, so any download that
+        # started since the last interaction has now surfaced its event.
+        # Persist it so it is available to the caller during the run, not only
+        # at teardown.
+        self._flush_downloads()
         if report:
             self._reporter.add_message(
                 self._REPORTER_ROLE_NAME, "screenshot()", screenshot

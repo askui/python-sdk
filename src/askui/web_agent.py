@@ -126,6 +126,19 @@ class WebAgent(Agent):
             ),
         )
 
+    def wait_until_downloads_complete(self) -> list[Path]:
+        """Block until all downloads started so far are fully saved to disk.
+
+        Returns:
+            list[Path]: Absolute paths of all downloads saved to `download_dir`
+                so far this session.
+
+        Raises:
+            DownloadError: If one or more downloads could not be saved
+                completely.
+        """
+        return self.os.wait_until_downloads_complete()
+
     @staticmethod
     def get_default_tools() -> list[Tool]:
         return [
