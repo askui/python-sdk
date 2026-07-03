@@ -12,6 +12,7 @@ from askui.locators.locators import Locator
 from askui.models.models import Point
 from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import ActSettings, LocateSettings, MessageSettings
+from askui.models.shared.thinking import make_thinking_settings
 from askui.models.shared.tools import Tool
 from askui.models.shared.truncation_strategies import TruncationStrategy
 from askui.prompts.act_prompts import (
@@ -206,7 +207,7 @@ class ComputerAgent(Agent):
         self.act_settings = ActSettings(
             messages=MessageSettings(
                 system=create_computer_agent_prompt(),
-                thinking={"type": "enabled", "budget_tokens": 2048},
+                **make_thinking_settings(self._vlm_provider.model_id),
             )
         )
 
