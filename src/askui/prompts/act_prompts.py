@@ -193,8 +193,11 @@ end execution."""
 WEB_BROWSER_CAPABILITIES = """You are an autonomous AI agent that can interact
 with web interfaces through computer vision and browser control.
 
-* You are utilizing a webbrowser in full-screen mode. So you are only
-  seeing the content of the currently opened webpage (tab).
+* You are utilizing a webbrowser in full-screen mode. You can see and
+  interact with one tab at a time — the currently active tab.
+* You can manage multiple browser tabs using the list_tabs, switch_tab,
+  and close_tab tools. When a link opens a new tab, use list_tabs to find
+  it and switch_tab to move to it if needed.
 * Your primary goal is to execute tasks efficiently and reliably.
 * Operate independently and make informed decisions without requiring
   user input.
@@ -228,7 +231,7 @@ ANDROID_DEVICE:
 * Test Device: Yes, with full permissions"""
 
 WEB_AGENT_DEVICE_INFORMATION = """* Environment: Web browser in full-screen mode
-* Visibility: Only current webpage content (single tab)
+* Visibility: Active tab content (use list_tabs / switch_tab to manage multiple tabs)
 * Interaction: Mouse, keyboard, and browser-specific controls"""
 
 # Report Format

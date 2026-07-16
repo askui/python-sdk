@@ -544,3 +544,89 @@ class PlaywrightGetPageUrlTool(PlaywrightBaseTool):
     def __call__(self) -> str:
         url = self.agent_os.get_page_url()
         return f"Current page URL: {url}"
+
+
+class PlaywrightListTabsTool(PlaywrightBaseTool):
+    """Lists all open browser tabs with their index, title, and URL."""
+
+    def __init__(self, agent_os: PlaywrightAgentOs | None = None) -> None:
+        super().__init__(
+            name="list_tabs",
+            description=(
+                "List all currently open browser tabs. "
+                "Returns the index, title, and URL of each tab. "
+                "Use the index with switch_tab or close_tab."
+            ),
+            agent_os=agent_os,
+        )
+
+    @override
+    def __call__(self) -> str:
+        tabs = self.agent_os.list_tabs()
+        if not tabs:
+            return "No open tabs."
+        lines = [f"[{t['index']}] {t['title']} — {t['url']}" for t in tabs]
+        return "Open tabs:\n" + "\n".join(lines)
+
+
+class PlaywrightSwitchTabTool(PlaywrightBaseTool):
+    """Switches the active browser tab to a tab at a given index."""
+
+    def __init__(self, agent_os: PlaywrightAgentOs | None = None) -> None:
+        super().__init__(
+            name="switch_tab",
+            description=(
+                "Switch to a different browser tab by its index. "
+                "Use list_tabs to see all open tabs and their indices."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "integer",
+                        "description": (
+                            "Zero-based index of the tab to switch to (from list_tabs)."
+                        ),
+                    },
+                },
+                "required": ["index"],
+            },
+            agent_os=agent_os,
+        )
+
+    @override
+    def __call__(self, index: int) -> str:
+        self.agent_os.switch_tab(index)
+        return f"Switched to tab {index}."
+
+
+class PlaywrightCloseTabTool(PlaywrightBaseTool):
+    """Closes a browser tab by its index."""
+
+    def __init__(self, agent_os: PlaywrightAgentOs | None = None) -> None:
+        super().__init__(
+            name="close_tab",
+            description=(
+                "Close a browser tab by its index. "
+                "Use list_tabs to see available tabs. "
+                "The last remaining tab cannot be closed."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "integer",
+                        "description": (
+                            "Zero-based index of the tab to close (from list_tabs)."
+                        ),
+                    },
+                },
+                "required": ["index"],
+            },
+            agent_os=agent_os,
+        )
+
+    @override
+    def __call__(self, index: int) -> str:
+        self.agent_os.close_tab(index)
+        return f"Tab {index} was closed."
