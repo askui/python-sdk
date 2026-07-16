@@ -134,6 +134,10 @@ class PlaywrightAgentOs(ComputerAgentOS):
         self._pages: list[Page] = []
         self._reporter: Reporter = reporter
 
+        # Set to True by _on_new_page when a new tab is followed; cleared by
+        # _sync_pages() after calling bring_to_front() on the main thread.
+        self._needs_bring_to_front: bool = False
+
         # Event listening state
         self._listening = False
         self._event_queue: list[InputEvent] = []
@@ -266,6 +270,12 @@ class PlaywrightAgentOs(ComputerAgentOS):
         self._pages.append(page)
         if self._auto_follow_new_tab:
             self._page = page
+            # Signal _sync_pages() to call bring_to_front() on the main thread.
+            # bring_to_front() is deliberately NOT called here: even though
+            # Playwright's EventGreenlet supports sync calls, any exception it
+            # raises would be silently deferred and re-raised at the next API
+            # call, which could fail an unrelated operation such as screenshot().
+            self._needs_bring_to_front = True
         self._reporter.add_message(
             self._REPORTER_ROLE_NAME,
             f"New tab opened: '{page.url}'",
@@ -274,37 +284,41 @@ class PlaywrightAgentOs(ComputerAgentOS):
     def _sync_pages(self) -> None:
         """Sync tracked pages with the live browser context, main-thread safe.
 
-        Detects pages that appeared after the last ``_on_new_page`` callback
-        (e.g. due to the race between the background event thread and the main
-        thread), registers their download listeners, appends them to
-        ``_pages``, and — when ``auto_follow_new_tab`` is ``True`` — makes the
-        newest one active and calls ``bring_to_front()`` so the browser UI
-        reflects the switch.
+        Called at the start of every ``screenshot`` (after ``_pump_event_loop``
+        has flushed all pending page events). Does three things:
 
-        Also prunes any pages that have been closed since the last sync.
-        Safe to call from the main thread at the start of every ``screenshot``.
+        1. Picks up any pages that ``_on_new_page`` could not track because of
+           the race between the dispatcher firing the event and ``screenshot``
+           being called — after the pump the event has already fired, so this
+           acts as a safety net rather than the primary detection path.
+        2. Prunes pages that have been closed since the last call.
+        3. Calls ``bring_to_front()`` on the main thread when
+           ``_needs_bring_to_front`` is set. The flag is raised by
+           ``_on_new_page`` instead of calling ``bring_to_front()`` there
+           directly, because a deferred exception from inside an EventGreenlet
+           would be re-raised at the next API call and silently break
+           unrelated operations.
         """
         if self._context is None:
             return
 
         known_ids = {id(p) for p in self._pages}
-        new_pages: list[Page] = []
         for page in self._context.pages:
             if id(page) not in known_ids:
                 page.on("download", self._on_download)
                 self._pages.append(page)
                 known_ids.add(id(page))
-                new_pages.append(page)
-
-        if new_pages and self._auto_follow_new_tab:
-            self._page = new_pages[-1]
+                if self._auto_follow_new_tab:
+                    self._page = page
+                    self._needs_bring_to_front = True
 
         # Prune closed pages
         self._pages = [p for p in self._pages if not p.is_closed()]
         if self._page is not None and self._page.is_closed():
             self._page = self._pages[-1] if self._pages else None
 
-        if self._page is not None and (new_pages and self._auto_follow_new_tab):
+        if self._needs_bring_to_front and self._page is not None:
+            self._needs_bring_to_front = False
             self._page.bring_to_front()
 
     def _on_download(self, download: Download) -> None:
@@ -495,9 +509,11 @@ class PlaywrightAgentOs(ComputerAgentOS):
             error_msg = "No active page. Call connect() first."
             raise RuntimeError(error_msg)
 
-        # Sync page tracking on the main thread before capturing. This catches
-        # new tabs opened since the last call (the background-thread event
-        # handler may have lost the race) and calls bring_to_front() safely.
+        # Pump the event loop before syncing so any pending "page" events
+        # (new tabs opened by the previous action) are processed first.
+        # Without this, the new-page event fires during page.screenshot()
+        # after the CDP command has already been sent to the old page.
+        self._pump_event_loop(0)
         self._sync_pages()
 
         screenshot_bytes = self._page.screenshot(scale="css")
