@@ -73,7 +73,7 @@ class PlaywrightAgentOs(ComputerAgentOS):
 
     This implementation uses Playwright's Python SDK to control browser automation
     and simulate user interactions. It provides mouse control, keyboard input,
-    and screen capture functionality through a browser context.
+    screen capture, and multi-tab management functionality through a browser context.
 
     Args:
         reporter (Reporter, optional): Reporter used for reporting. Defaults to
@@ -96,6 +96,11 @@ class PlaywrightAgentOs(ComputerAgentOS):
             When ``None``, downloads are left in Playwright's temporary location
             (and deleted when the browser closes). The directory is created if it
             does not exist. Defaults to `None`.
+        auto_follow_new_tab (bool, optional): When `True`, any new tab opened by the
+            browser (e.g. via ``target="_blank"`` links or ``window.open()``)
+            automatically becomes the active tab. When `False`, new tabs are tracked
+            but the active tab does not change; use `switch_tab()` to move to them
+            manually. Defaults to `True`.
     """
 
     _REPORTER_ROLE_NAME: str = "PlaywrightAgentOS"
@@ -110,6 +115,7 @@ class PlaywrightAgentOs(ComputerAgentOS):
         install_browser: bool = True,
         install_dependencies: bool = False,
         download_dir: str | Path | None = None,
+        auto_follow_new_tab: bool = True,
     ) -> None:
         self._browser_type = browser_type
         self._headless = headless
@@ -118,13 +124,19 @@ class PlaywrightAgentOs(ComputerAgentOS):
         self._install_browser = install_browser
         self._install_dependencies = install_dependencies
         self._download_dir = Path(download_dir) if download_dir is not None else None
+        self._auto_follow_new_tab = auto_follow_new_tab
 
         # Playwright objects
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
+        self._pages: list[Page] = []
         self._reporter: Reporter = reporter
+
+        # Set to True by _on_new_page when a new tab is followed; cleared by
+        # _sync_pages() after calling bring_to_front() on the main thread.
+        self._needs_bring_to_front: bool = False
 
         # Event listening state
         self._listening = False
@@ -224,14 +236,90 @@ class PlaywrightAgentOs(ComputerAgentOS):
                 no_viewport=True,
             )
 
+        self._pages = []
         self._page = self._context.new_page()
+        self._pages.append(self._page)
         self._page.on("download", self._on_download)
+        self._context.on("page", self._on_new_page)
         # Navigate to a blank page to ensure we have a working page
         self._page.goto("data:text/html,<html><body><h1>Starting...</h1></body></html>")
         self._reporter.add_message(
             self._REPORTER_ROLE_NAME,
             "Connected to playwright browser",
         )
+
+    def _on_new_page(self, page: Page) -> None:
+        """Track a newly opened browser tab.
+
+        Registered as a ``page`` event handler on the `BrowserContext`. Called
+        from Playwright's background asyncio thread whenever a new tab is opened
+        (e.g. via ``target="_blank"`` links or ``window.open()``).
+
+        Only thread-safe operations are performed here: appending to the tracked
+        list and reassigning ``self._page``. Sync Playwright methods such as
+        ``bring_to_front()`` must NOT be called here — they require the main
+        greenlet context and deadlock when invoked from the background thread.
+        Auto-follow (including ``bring_to_front()``) is completed on the main
+        thread by `_sync_pages`, which is called at the start of every
+        `screenshot`.
+
+        Args:
+            page (Page): The newly opened Playwright page.
+        """
+        page.on("download", self._on_download)
+        self._pages.append(page)
+        if self._auto_follow_new_tab:
+            self._page = page
+            # Signal _sync_pages() to call bring_to_front() on the main thread.
+            # bring_to_front() is deliberately NOT called here: even though
+            # Playwright's EventGreenlet supports sync calls, any exception it
+            # raises would be silently deferred and re-raised at the next API
+            # call, which could fail an unrelated operation such as screenshot().
+            self._needs_bring_to_front = True
+        self._reporter.add_message(
+            self._REPORTER_ROLE_NAME,
+            f"New tab opened: '{page.url}'",
+        )
+
+    def _sync_pages(self) -> None:
+        """Sync tracked pages with the live browser context, main-thread safe.
+
+        Called at the start of every ``screenshot`` (after ``_pump_event_loop``
+        has flushed all pending page events). Does three things:
+
+        1. Picks up any pages that ``_on_new_page`` could not track because of
+           the race between the dispatcher firing the event and ``screenshot``
+           being called — after the pump the event has already fired, so this
+           acts as a safety net rather than the primary detection path.
+        2. Prunes pages that have been closed since the last call.
+        3. Calls ``bring_to_front()`` on the main thread when
+           ``_needs_bring_to_front`` is set. The flag is raised by
+           ``_on_new_page`` instead of calling ``bring_to_front()`` there
+           directly, because a deferred exception from inside an EventGreenlet
+           would be re-raised at the next API call and silently break
+           unrelated operations.
+        """
+        if self._context is None:
+            return
+
+        known_ids = {id(p) for p in self._pages}
+        for page in self._context.pages:
+            if id(page) not in known_ids:
+                page.on("download", self._on_download)
+                self._pages.append(page)
+                known_ids.add(id(page))
+                if self._auto_follow_new_tab:
+                    self._page = page
+                    self._needs_bring_to_front = True
+
+        # Prune closed pages
+        self._pages = [p for p in self._pages if not p.is_closed()]
+        if self._page is not None and self._page.is_closed():
+            self._page = self._pages[-1] if self._pages else None
+
+        if self._needs_bring_to_front and self._page is not None:
+            self._needs_bring_to_front = False
+            self._page.bring_to_front()
 
     def _on_download(self, download: Download) -> None:
         """Register a started download for deterministic saving.
@@ -380,9 +468,9 @@ class PlaywrightAgentOs(ComputerAgentOS):
         # the copy and leaves a truncated file on disk.
         self._deliver_and_flush_downloads()
 
-        if self._page:
-            self._page.close()
-            self._page = None
+        # Clear page tracking; context.close() handles actual page teardown.
+        self._pages.clear()
+        self._page = None
 
         if self._context:
             self._context.close()
@@ -420,6 +508,13 @@ class PlaywrightAgentOs(ComputerAgentOS):
         if not self._page:
             error_msg = "No active page. Call connect() first."
             raise RuntimeError(error_msg)
+
+        # Pump the event loop before syncing so any pending "page" events
+        # (new tabs opened by the previous action) are processed first.
+        # Without this, the new-page event fires during page.screenshot()
+        # after the CDP command has already been sent to the old page.
+        self._pump_event_loop(0)
+        self._sync_pages()
 
         screenshot_bytes = self._page.screenshot(scale="css")
         screenshot = Image.open(io.BytesIO(screenshot_bytes))
@@ -703,6 +798,95 @@ class PlaywrightAgentOs(ComputerAgentOS):
                 width=viewport_size["width"],
                 height=viewport_size["height"],
             ),
+        )
+
+    # --- Tab management ---
+
+    def list_tabs(self) -> list[dict[str, int | str]]:
+        """Return metadata for every currently open browser tab.
+
+        Returns:
+            list[dict[str, int | str]]: One entry per open tab, each containing:
+
+                - ``index`` (int): Zero-based tab index used by `switch_tab` and
+                  `close_tab`.
+                - ``title`` (str): Page title (empty string if unavailable).
+                - ``url`` (str): Current URL of the page.
+        """
+        tabs: list[dict[str, int | str]] = []
+        for i, page in enumerate(self._pages):
+            try:
+                title: str = page.title()
+            except Exception:  # noqa: BLE001
+                title = ""
+            tabs.append({"index": i, "title": title, "url": page.url})
+        return tabs
+
+    def switch_tab(self, index: int) -> None:
+        """Switch the active browser tab to the tab at ``index``.
+
+        Args:
+            index (int): Zero-based index of the tab to activate (see
+                `list_tabs` for available indices).
+
+        Raises:
+            RuntimeError: If no browser session is active.
+            IndexError: If ``index`` is out of range.
+        """
+        if not self._pages:
+            error_msg = "No open tabs. Call connect() first."
+            raise RuntimeError(error_msg)
+        if index < 0 or index >= len(self._pages):
+            error_msg = (
+                f"Tab index {index} is out of range. "
+                f"Available indices: 0-{len(self._pages) - 1}."
+            )
+            raise IndexError(error_msg)
+        self._page = self._pages[index]
+        self._page.bring_to_front()
+        self._reporter.add_message(
+            self._REPORTER_ROLE_NAME,
+            f"switch_tab(index={index}) -> '{self._page.url}'",
+        )
+
+    def close_tab(self, index: int) -> None:
+        """Close the browser tab at ``index``.
+
+        When the closed tab was the active one, the agent automatically
+        switches to the nearest remaining tab (the tab at ``index - 1``, or
+        the new last tab when ``index`` was the last one).
+
+        Args:
+            index (int): Zero-based index of the tab to close (see `list_tabs`
+                for available indices).
+
+        Raises:
+            RuntimeError: If no browser session is active or if only one tab
+                remains (closing it would leave the browser with no pages).
+            IndexError: If ``index`` is out of range.
+        """
+        if not self._pages:
+            error_msg = "No open tabs. Call connect() first."
+            raise RuntimeError(error_msg)
+        if len(self._pages) <= 1:
+            error_msg = "Cannot close the last remaining tab."
+            raise RuntimeError(error_msg)
+        if index < 0 or index >= len(self._pages):
+            error_msg = (
+                f"Tab index {index} is out of range. "
+                f"Available indices: 0-{len(self._pages) - 1}."
+            )
+            raise IndexError(error_msg)
+        page_to_close = self._pages.pop(index)
+        was_active = self._page is page_to_close
+        page_to_close.close()
+        if was_active:
+            new_index = min(index, len(self._pages) - 1)
+            self._page = self._pages[new_index]
+            self._page.bring_to_front()
+        self._reporter.add_message(
+            self._REPORTER_ROLE_NAME,
+            f"close_tab(index={index})",
         )
 
     def _convert_key(self, key: PcKey | ModifierKey) -> str:

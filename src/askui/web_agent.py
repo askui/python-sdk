@@ -21,6 +21,7 @@ from askui.tools.playwright.agent_os import PlaywrightAgentOs
 from askui.tools.playwright.agent_os_facade import PlaywrightAgentOsFacade
 from askui.tools.playwright.tools import (
     PlaywrightBackTool,
+    PlaywrightCloseTabTool,
     PlaywrightForwardTool,
     PlaywrightGetPageTitleTool,
     PlaywrightGetPageUrlTool,
@@ -28,12 +29,14 @@ from askui.tools.playwright.tools import (
     PlaywrightKeyboardPressedTool,
     PlaywrightKeyboardReleaseTool,
     PlaywrightKeyboardTapTool,
+    PlaywrightListTabsTool,
     PlaywrightMouseClickTool,
     PlaywrightMouseHoldDownTool,
     PlaywrightMouseMoveTool,
     PlaywrightMouseReleaseTool,
     PlaywrightMouseScrollTool,
     PlaywrightScreenshotTool,
+    PlaywrightSwitchTabTool,
     PlaywrightTypeTool,
 )
 
@@ -69,6 +72,12 @@ class WebAgent(Agent):
             (auto-renamed on filename collision). When `None`, downloads are left
             in Playwright's temporary location and removed when the browser
             closes. Defaults to `None`.
+        auto_follow_new_tab (bool, optional): When `True`, any new tab opened by the
+            browser (e.g. via ``target="_blank"`` links or ``window.open()``)
+            automatically becomes the active tab so subsequent actions target it.
+            When `False`, new tabs are tracked but the active tab does not change;
+            use `agent.os.switch_tab()` or the `switch_tab` tool to move to them
+            manually. Defaults to `True`.
 
     Example:
         ```python
@@ -88,6 +97,7 @@ class WebAgent(Agent):
             "truncation_strategy",
             "secrets",
             "download_dir",
+            "auto_follow_new_tab",
         }
     )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
@@ -101,9 +111,14 @@ class WebAgent(Agent):
         truncation_strategy: TruncationStrategy | None = None,
         secrets: list[Secret] | None = None,
         download_dir: str | Path | None = None,
+        auto_follow_new_tab: bool = True,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
-        self.os = PlaywrightAgentOs(reporter, download_dir=download_dir)
+        self.os = PlaywrightAgentOs(
+            reporter,
+            download_dir=download_dir,
+            auto_follow_new_tab=auto_follow_new_tab,
+        )
         super().__init__(
             reporter=reporter,
             retry=retry,
@@ -158,6 +173,9 @@ class WebAgent(Agent):
             PlaywrightForwardTool(),
             PlaywrightGetPageTitleTool(),
             PlaywrightGetPageUrlTool(),
+            PlaywrightListTabsTool(),
+            PlaywrightSwitchTabTool(),
+            PlaywrightCloseTabTool(),
             ExceptionTool(),
         ]
 
