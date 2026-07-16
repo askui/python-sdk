@@ -245,12 +245,19 @@ class PlaywrightAgentOs(ComputerAgentOS):
         )
 
     def _on_new_page(self, page: Page) -> None:
-        """Track a newly opened browser tab and optionally make it active.
+        """Track a newly opened browser tab.
 
         Registered as a ``page`` event handler on the `BrowserContext`. Called
-        whenever a new tab is opened (e.g. via ``target="_blank"`` links or
-        ``window.open()``). When `auto_follow_new_tab` is `True`, the new page
-        immediately becomes the active page; otherwise it is only tracked.
+        from Playwright's background asyncio thread whenever a new tab is opened
+        (e.g. via ``target="_blank"`` links or ``window.open()``).
+
+        Only thread-safe operations are performed here: appending to the tracked
+        list and reassigning ``self._page``. Sync Playwright methods such as
+        ``bring_to_front()`` must NOT be called here — they require the main
+        greenlet context and deadlock when invoked from the background thread.
+        Auto-follow (including ``bring_to_front()``) is completed on the main
+        thread by `_sync_pages`, which is called at the start of every
+        `screenshot`.
 
         Args:
             page (Page): The newly opened Playwright page.
@@ -259,11 +266,46 @@ class PlaywrightAgentOs(ComputerAgentOS):
         self._pages.append(page)
         if self._auto_follow_new_tab:
             self._page = page
-            page.bring_to_front()
         self._reporter.add_message(
             self._REPORTER_ROLE_NAME,
             f"New tab opened: '{page.url}'",
         )
+
+    def _sync_pages(self) -> None:
+        """Sync tracked pages with the live browser context, main-thread safe.
+
+        Detects pages that appeared after the last ``_on_new_page`` callback
+        (e.g. due to the race between the background event thread and the main
+        thread), registers their download listeners, appends them to
+        ``_pages``, and — when ``auto_follow_new_tab`` is ``True`` — makes the
+        newest one active and calls ``bring_to_front()`` so the browser UI
+        reflects the switch.
+
+        Also prunes any pages that have been closed since the last sync.
+        Safe to call from the main thread at the start of every ``screenshot``.
+        """
+        if self._context is None:
+            return
+
+        known_ids = {id(p) for p in self._pages}
+        new_pages: list[Page] = []
+        for page in self._context.pages:
+            if id(page) not in known_ids:
+                page.on("download", self._on_download)
+                self._pages.append(page)
+                known_ids.add(id(page))
+                new_pages.append(page)
+
+        if new_pages and self._auto_follow_new_tab:
+            self._page = new_pages[-1]
+
+        # Prune closed pages
+        self._pages = [p for p in self._pages if not p.is_closed()]
+        if self._page is not None and self._page.is_closed():
+            self._page = self._pages[-1] if self._pages else None
+
+        if self._page is not None and (new_pages and self._auto_follow_new_tab):
+            self._page.bring_to_front()
 
     def _on_download(self, download: Download) -> None:
         """Register a started download for deterministic saving.
@@ -452,6 +494,11 @@ class PlaywrightAgentOs(ComputerAgentOS):
         if not self._page:
             error_msg = "No active page. Call connect() first."
             raise RuntimeError(error_msg)
+
+        # Sync page tracking on the main thread before capturing. This catches
+        # new tabs opened since the last call (the background-thread event
+        # handler may have lost the race) and calls bring_to_front() safely.
+        self._sync_pages()
 
         screenshot_bytes = self._page.screenshot(scale="css")
         screenshot = Image.open(io.BytesIO(screenshot_bytes))
