@@ -201,12 +201,32 @@ ANDROID_KEY = Literal[  # pylint: disable=C0103
 
 
 class AndroidDisplay:
+    """A selectable Android display.
+
+    ``display_id`` is the logical DisplayManager id consumed by ``input``
+    (tap/swipe/type/keyevent). ``unique_display_id`` is the physical display id
+    consumed by ``screencap``. Either may be ``None``, in which case the
+    corresponding shell command runs with no ``-d`` flag and therefore targets
+    adb's default display (display 0).
+
+    Passing ``None`` for ``display_id`` is only correct when the target screen
+    IS the default display; on a multi-display setup where the agent switches
+    displays, provide the real logical id instead (a ``None`` input flag ignores
+    which display is currently active). Likewise, a display with
+    ``unique_display_id=None`` cannot be selected by the model at runtime — the
+    ``select_display_by_unique_id`` tool needs a concrete unique id — so use it
+    only for a pinned, non-switchable display.
+    """
+
     def __init__(
-        self, unique_display_id: int, display_name: str, display_id: int
+        self,
+        unique_display_id: int | None,
+        display_name: str,
+        display_id: int | None,
     ) -> None:
-        self.unique_display_id: int = unique_display_id
+        self.unique_display_id: int | None = unique_display_id
         self.display_name: str = display_name
-        self.display_id: int = display_id
+        self.display_id: int | None = display_id
 
     def __repr__(self) -> str:
         return (
@@ -214,40 +234,49 @@ class AndroidDisplay:
             f"display_name={self.display_name}, display_id={self.display_id})"
         )
 
+    def __str__(self) -> str:
+        # Model-facing rendering (used by the display-info tools). Only surface a
+        # unique id the model can hand back to select_display_by_unique_id; a
+        # None id means "default display" and is not selectable.
+        if self.unique_display_id is None:
+            return f"display '{self.display_name}' (default display)"
+        return (
+            f"display '{self.display_name}' "
+            f"(unique_display_id={self.unique_display_id})"
+        )
+
     def get_display_id_flag(self) -> str:
         """
-        Returns the display ID flag for shell commands.
+        Returns the display ID flag for input/tap/swipe/type shell commands.
 
         Returns:
-            str: The display ID flag in the format `-d {display_id}`.
+            str: ``-d {display_id}``, or an empty string when ``display_id`` is
+            ``None`` (input then targets adb's default display).
         """
-        return f"-d {self.display_id}"
+        return "" if self.display_id is None else f"-d {self.display_id}"
 
     def get_display_unique_id_flag(self) -> str:
         """
-        Returns the display unique ID flag for shell screencap command.
+        Returns the display unique ID flag for the screencap shell command.
 
         Returns:
-            str: The display unique ID flag in the format `-d {unique_display_id}`.
+            str: ``-d {unique_display_id}``, or an empty string when
+            ``unique_display_id`` is ``None`` (screencap then targets the default
+            display).
         """
-        return f"-d {self.unique_display_id}"
+        return "" if self.unique_display_id is None else f"-d {self.unique_display_id}"
 
 
 class SingleAndroidDisplay(AndroidDisplay):
     """
     Single display when there is only one display connected.
+
+    Both ids are ``None`` so input and screencap run without a ``-d`` flag
+    (adb's default display).
     """
 
     def __init__(self, display_name: str) -> None:
-        super().__init__(0, display_name, 0)
-
-    # In case of a single display, the display id flag is not needed
-    def get_display_id_flag(self) -> str:
-        return ""
-
-    # In case of a single display, the display unique id flag is not needed
-    def get_display_unique_id_flag(self) -> str:
-        return ""
+        super().__init__(None, display_name, None)
 
 
 class UnknownAndroidDisplay(SingleAndroidDisplay):

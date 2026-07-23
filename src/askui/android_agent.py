@@ -15,7 +15,7 @@ from askui.models.shared.settings import ActSettings, MessageSettings
 from askui.models.shared.tools import Tool
 from askui.models.shared.truncation_strategies import TruncationStrategy
 from askui.prompts.act_prompts import create_android_agent_prompt
-from askui.tools.android.agent_os import ANDROID_KEY
+from askui.tools.android.agent_os import ANDROID_KEY, AndroidDisplay
 from askui.tools.android.agent_os_facade import AndroidAgentOsFacade
 from askui.tools.android.ppadb_agent_os import PpadbAgentOs
 from askui.tools.android.tools import (
@@ -50,6 +50,8 @@ class AndroidAgent(Agent):
 
     Args:
         device (str | int, optional): The Android device to connect to. Can be either a serial number (as a `str`) or an index (as an `int`) representing the position in the `adb devices` list. Index `0` refers to the first device. Defaults to `0`.
+        display (AndroidDisplay | list[AndroidDisplay] | int | str | None, optional): Which display to drive. An `AndroidDisplay` pins that exact display (bypassing auto-detection, so you control the input/screencap `-d` ids). A `list[AndroidDisplay]` becomes the authoritative set of selectable displays — the first is active and the model may switch among them at runtime with correct ids. An `int` selects by index and a `str` by name, both via auto-detection. `None` (default) auto-detects and selects the first display.
+        display_allow_switching (bool, optional): When `False`, the runtime display/device selection tools are removed so a pinned `display` cannot be changed mid-run. Defaults to `True`.
         reporters (list[Reporter] | None, optional): List of reporter instances for logging and reporting. If `None`, an empty list is used.
         settings (AgentSettings | None, optional): Provider-based model settings. If `None`, uses the default AskUI model stack.
         retry (Retry, optional): The retry instance to use for retrying failed actions. Defaults to `ConfigurableRetry` with exponential backoff. Currently only supported for `locate()` method.
@@ -81,6 +83,8 @@ class AndroidAgent(Agent):
     def __init__(
         self,
         device: str | int = 0,
+        display: "AndroidDisplay | list[AndroidDisplay] | int | str | None" = None,
+        display_allow_switching: bool = True,
         reporters: list[Reporter] | None = None,
         settings: AgentSettings | None = None,
         retry: Retry | None = None,
@@ -90,11 +94,16 @@ class AndroidAgent(Agent):
         secrets: list[Secret] | None = None,
     ) -> None:
         reporter = CompositeReporter(reporters=reporters)
-        self.os = PpadbAgentOs(device_identifier=device, reporter=reporter)
+        self.os = PpadbAgentOs(
+            device_identifier=device, display=display, reporter=reporter
+        )
+        default_tools = self._apply_display_tool_policy(
+            self.get_default_tools(), display_allow_switching
+        )
         super().__init__(
             reporter=reporter,
             retry=retry,
-            tools=self.get_default_tools() + (act_tools or []),
+            tools=default_tools + (act_tools or []),
             agent_os=self.os,
             settings=settings,
             callbacks=callbacks,
@@ -361,6 +370,30 @@ class AndroidAgent(Agent):
             f"set_device_by_serial_number(device_sn='{device_sn}')",
         )
         self.os.set_device_by_serial_number(device_sn)
+
+    @staticmethod
+    def _apply_display_tool_policy(
+        tools: list[Tool], display_allow_switching: bool
+    ) -> list[Tool]:
+        """Drop the display/device *mutating* tools when switching is disabled.
+
+        The read-only display-info tools are kept. Device selection is included
+        because selecting a device resets the active display to index 0, which
+        would undo a pinned `display`.
+        """
+        if display_allow_switching:
+            return tools
+        return [
+            t
+            for t in tools
+            if not isinstance(
+                t,
+                (
+                    AndroidSelectDisplayByUniqueIDTool,
+                    AndroidSelectDeviceBySerialNumberTool,
+                ),
+            )
+        ]
 
     @staticmethod
     def get_default_tools() -> list[Tool]:

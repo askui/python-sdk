@@ -41,7 +41,10 @@ class PpadbAgentOs(AndroidAgentOs):
     _UIAUTOMATOR_DUMP_PATH: str = "/data/local/tmp/askui_window_dump.xml"
 
     def __init__(
-        self, reporter: Reporter = NULL_REPORTER, device_identifier: str | int = 0
+        self,
+        reporter: Reporter = NULL_REPORTER,
+        device_identifier: str | int = 0,
+        display: "AndroidDisplay | list[AndroidDisplay] | int | str | None" = None,
     ) -> None:
         self._client: Optional[AdbClient] = None
         self._device: Optional[AndroidDevice] = None
@@ -50,6 +53,21 @@ class PpadbAgentOs(AndroidAgentOs):
         self._selected_display: Optional[AndroidDisplay] = None
         self._reporter: Reporter = reporter
         self._device_identifier: str | int = device_identifier
+        self._display_config = display
+        # When the caller supplies explicit AndroidDisplay(s), they become the
+        # authoritative display list — get_connected_displays() returns them
+        # verbatim instead of the SurfaceFlinger auto-detection, so both the
+        # initial selection AND every runtime set_display_by_* (incl. the model's
+        # select_display_by_unique_id tool) resolve against the caller's correct
+        # ids. int/str selectors keep using auto-detection.
+        self._display_override: Optional[list[AndroidDisplay]] = None
+        if isinstance(display, AndroidDisplay):
+            self._display_override = [display]
+        elif isinstance(display, list):
+            if not display:
+                msg = "display list must not be empty"
+                raise AndroidAgentOsError(msg)
+            self._display_override = list(display)
 
     def connect_adb_client(self) -> None:
         if self._client is not None:
@@ -77,6 +95,15 @@ class PpadbAgentOs(AndroidAgentOs):
             self.set_device_by_serial_number(self._device_identifier)
         else:
             self.set_device_by_index(self._device_identifier)
+        # Device selection defaults the active display to index 0. With an
+        # override list that already resolves to the first supplied display; for
+        # int/str selectors, apply the caller's explicit choice on top.
+        if isinstance(self._display_config, bool):
+            pass  # bool is an int subclass; never treat True/False as an index
+        elif isinstance(self._display_config, int):
+            self.set_display_by_index(self._display_config)
+        elif isinstance(self._display_config, str):
+            self.set_display_by_name(self._display_config)
         device: AndroidDevice = self._get_selected_device()
         device.wait_boot_complete()
 
@@ -97,6 +124,8 @@ class PpadbAgentOs(AndroidAgentOs):
         )
 
     def get_connected_displays(self) -> list[AndroidDisplay]:
+        if self._display_override is not None:
+            return list(self._display_override)
         device: AndroidDevice = self._get_selected_device()
         displays: list[AndroidDisplay] = []
         output: str = device.shell(
