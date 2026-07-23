@@ -1,5 +1,6 @@
 """Unit tests for the OpenAIMessagesApi message_transform hook."""
 
+from typing import Any
 from unittest.mock import MagicMock
 
 from askui.models.openai.messages_api import OpenAIMessagesApi
@@ -19,10 +20,10 @@ def _fake_completion(content: str = "ok") -> MagicMock:
     return response
 
 
-def _client_capturing(captured: dict) -> MagicMock:
+def _client_capturing(captured: dict[str, Any]) -> MagicMock:
     client = MagicMock()
 
-    def create(**kwargs):
+    def create(**kwargs: Any) -> MagicMock:
         captured["messages"] = kwargs["messages"]
         return _fake_completion()
 
