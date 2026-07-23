@@ -264,11 +264,7 @@ class AndroidDisplay:
             ``unique_display_id`` is ``None`` (screencap then targets the default
             display).
         """
-        return (
-            ""
-            if self.unique_display_id is None
-            else f"-d {self.unique_display_id}"
-        )
+        return "" if self.unique_display_id is None else f"-d {self.unique_display_id}"
 
 
 class SingleAndroidDisplay(AndroidDisplay):

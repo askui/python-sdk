@@ -16,7 +16,6 @@ from askui.tools.android.tools import (
     AndroidSelectDisplayByUniqueIDTool,
 )
 
-
 # --- AndroidDisplay flag emission ------------------------------------------
 
 
