@@ -35,6 +35,7 @@ from askui.model_providers.openai_compatible_vlm_provider import (
 from askui.model_providers.openai_image_qa_provider import OpenAIImageQAProvider
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
 from askui.model_providers.vlm_provider import VlmProvider
+from askui.models.openai.messages_api import MessageTransform
 from askui.models.shared.coordinate_space import (
     NormalizedCoordinateSpace,
     PixelCoordinateSpace,
@@ -59,6 +60,7 @@ __all__ = [
     "ImageQAProvider",
     "ContainedImageScaler",
     "ImageScaler",
+    "MessageTransform",
     "ModelPricing",
     "PatchOptimizedImageScaler",
     "NormalizedCoordinateSpace",
