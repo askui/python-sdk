@@ -34,6 +34,41 @@ Requires the `android` dependency installed (`pip install askui[android]`) and a
 
 **Default tools:** `screenshot`, `tap`, `type`, `swipe`, `drag_and_drop`, `key_tap_event`, `key_combination`, `shell`, `select_device_by_serial_number`, `select_display_by_unique_id`, `get_connected_devices_serial_numbers`, `get_connected_displays_infos`, `get_current_connected_device_infos`
 
+### Selecting a display
+
+By default the agent drives the first detected display. On multi-display hardware (e.g. automotive head units) you can pin a specific display with the `display` parameter:
+
+```python
+from askui import AndroidAgent
+from askui.tools.android.agent_os import AndroidDisplay
+
+# Pin one display by its exact ids (bypasses auto-detection).
+# The ids below are placeholders — read your device's real values from
+# `adb shell dumpsys display` (see the command at the end of this section).
+with AndroidAgent(
+    device="emulator-5554",
+    display=AndroidDisplay(unique_display_id=1234567890123456789, display_name="secondary", display_id=2),
+    display_allow_switching=False,
+) as agent:
+    agent.act("Open settings")
+```
+
+`display` accepts:
+
+- **`AndroidDisplay`** — pins that exact display and bypasses auto-detection, so you control the ids used for shell commands. `display_id` is the logical id passed to `input` (tap/swipe/type) as `-d <id>`; `unique_display_id` is the physical id passed to `screencap` as `-d <id>`. Get both from the device: `adb shell dumpsys display` (look for the `mViewports` line, which maps `displayId ↔ uniqueId`).
+- **`list[AndroidDisplay]`** — the authoritative set of selectable displays. The first is active, and the agent may switch among them at runtime with correct ids.
+- **`int`** — select by index, **`str`** — select by name (both via auto-detection).
+
+Either id may be `None`, which omits the `-d` flag so that command targets adb's **default display** (display 0). Use `display_id=None` only when your target screen is the default display; on a multi-display setup, pass the real logical id instead.
+
+Set `display_allow_switching=False` to remove the runtime display/device selection tools, so a pinned `display` cannot be changed mid-run by the model.
+
+You can find the ids for a device with (the quotes keep the pipe inside the device shell, so this works the same on PowerShell, cmd, and bash):
+
+```bash
+adb shell "dumpsys display | grep -iE 'mViewports|uniqueId'"
+```
+
 ## WebVisionAgent
 
 For web browser automation using Playwright. Extends `ComputerAgent` with web-specific tools like navigation, URL handling, and page title retrieval.
