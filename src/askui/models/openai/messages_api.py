@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from openai import OpenAI
@@ -303,11 +304,23 @@ def _from_openai_response(response: ChatCompletion) -> MessageParam:
     )
 
 
+#: A hook to post-process the OpenAI-format ``messages`` list right before it is
+#: sent to the chat/completions endpoint. Receives (and returns) the list of
+#: OpenAI message dicts. Useful for OpenAI-compatible gateways that deviate from
+#: the stock chat spec (e.g. stricter message-ordering or content rules).
+MessageTransform = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+
+
 class OpenAIMessagesApi(MessagesApi):
     """MessagesApi implementation for any OpenAI-compatible chat API."""
 
-    def __init__(self, client: OpenAI) -> None:
+    def __init__(
+        self,
+        client: OpenAI,
+        message_transform: MessageTransform | None = None,
+    ) -> None:
         self._client = client
+        self._message_transform = message_transform
 
     @override
     def create_message(
@@ -341,6 +354,8 @@ class OpenAIMessagesApi(MessagesApi):
             The model's response as a `MessageParam`.
         """
         openai_messages = _to_openai_messages(messages, system)
+        if self._message_transform is not None:
+            openai_messages = self._message_transform(openai_messages)
 
         kwargs: dict[str, Any] = {
             "model": model_id,

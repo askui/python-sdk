@@ -8,7 +8,7 @@ from openai import OpenAI
 from typing_extensions import override
 
 from askui.model_providers.vlm_provider import VlmProvider
-from askui.models.openai.messages_api import OpenAIMessagesApi
+from askui.models.openai.messages_api import MessageTransform, OpenAIMessagesApi
 from askui.models.shared.agent_message_param import (
     MessageParam,
     ThinkingConfigParam,
@@ -53,6 +53,12 @@ class OpenAIVlmProvider(VlmProvider):
             for screenshots sent to the model.  Only used when ``image_scaler``
             is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
             environment if not provided.  Defaults to 1024.
+        message_transform (`MessageTransform` | None, optional): Hook to
+            post-process the OpenAI-format ``messages`` list right before it is
+            sent. Receives and returns the list of OpenAI message dicts. Use it
+            for OpenAI-compatible gateways that deviate from the stock chat spec
+            (e.g. stricter message-ordering or content rules). ``None`` (default)
+            sends the messages unchanged.
 
     Example:
         ```python
@@ -81,6 +87,7 @@ class OpenAIVlmProvider(VlmProvider):
         output_cost_per_million_tokens: float | None = None,
         cache_write_cost_per_million_tokens: float | None = None,
         cache_read_cost_per_million_tokens: float | None = None,
+        message_transform: MessageTransform | None = None,
     ) -> None:
         self._model_id_value = (
             model_id or os.environ.get("VLM_PROVIDER_MODEL_ID") or _DEFAULT_MODEL_ID
@@ -103,6 +110,7 @@ class OpenAIVlmProvider(VlmProvider):
                 api_key=api_key,
                 base_url=base_url,
             )
+        self._message_transform = message_transform
 
         self._pricing = ModelPricing.for_model(
             self._model_id_value,
@@ -135,7 +143,10 @@ class OpenAIVlmProvider(VlmProvider):
     @cached_property
     def _messages_api(self) -> OpenAIMessagesApi:
         """Lazily initialise the `OpenAIMessagesApi` on first use."""
-        return OpenAIMessagesApi(client=self._client)
+        return OpenAIMessagesApi(
+            client=self._client,
+            message_transform=self._message_transform,
+        )
 
     @override
     def augment_system_prompt(self, system: SystemPrompt) -> SystemPrompt:

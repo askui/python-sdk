@@ -4,6 +4,7 @@ import httpx
 from openai import OpenAI
 
 from askui.model_providers.openai_vlm_provider import OpenAIVlmProvider
+from askui.models.openai.messages_api import MessageTransform
 from askui.models.shared.coordinate_space import (
     PixelCoordinateSpace,
     VlmCoordinateSpace,
@@ -37,6 +38,10 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
             is not provided.  Reads ``ASKUI_VLM_MAX_IMAGE_EDGE`` from the
             environment if not provided.  Inherits the default from
             `OpenAIVlmProvider` (1024).
+        message_transform (`MessageTransform` | None, optional): Hook to
+            post-process the OpenAI-format ``messages`` list right before it is
+            sent — for gateways that deviate from the stock chat spec. See
+            `OpenAIVlmProvider`.
 
     Example:
         ```python
@@ -61,6 +66,7 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
         coordinate_space: VlmCoordinateSpace = _DEFAULT_COORDINATE_SPACE,
         image_scaler: ImageScaler | None = None,
         image_edge_max: int | None = None,
+        message_transform: MessageTransform | None = None,
     ) -> None:
         def _rewrite_url(request: httpx.Request) -> None:
             request.url = httpx.URL(endpoint_url)
@@ -79,4 +85,5 @@ class OpenAICompatibleVlmProvider(OpenAIVlmProvider):
             coordinate_space=coordinate_space,
             image_scaler=image_scaler,
             image_edge_max=image_edge_max,
+            message_transform=message_transform,
         )
