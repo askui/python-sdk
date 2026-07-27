@@ -28,7 +28,7 @@ from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 
-_DEFAULT_MODEL_ID = "claude-sonnet-4-6"
+_DEFAULT_MODEL_ID = "claude-sonnet-5"
 _DEFAULT_MAX_IMAGE_EDGE = 1024
 # Claude emits native pixel coordinates; Gemini emits coordinates in a
 # 1000x1000 normalised grid.
