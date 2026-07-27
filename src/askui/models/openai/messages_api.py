@@ -156,16 +156,19 @@ def _convert_assistant_message(
         if isinstance(block, TextBlockParam):
             text_parts.append(block.text)
         elif isinstance(block, ToolUseBlockParam):
-            tool_calls.append(
-                {
-                    "id": block.id,
-                    "type": "function",
-                    "function": {
-                        "name": block.name,
-                        "arguments": json.dumps(block.input),
-                    },
-                }
-            )
+            tool_call: dict[str, Any] = {
+                "id": block.id,
+                "type": "function",
+                "function": {
+                    "name": block.name,
+                    "arguments": json.dumps(block.input),
+                },
+            }
+            # Echo back provider-specific data (e.g. Gemini thought signatures)
+            # so multi-turn tool calling keeps working.
+            if block.extra_content is not None:
+                tool_call["extra_content"] = block.extra_content
+            tool_calls.append(tool_call)
         # Skip thinking blocks silently
 
     openai_msg: dict[str, Any] = {"role": "assistant"}
@@ -254,11 +257,18 @@ def _parse_tool_calls(
                 },
             )
             arguments = {"raw_arguments": tool_call.function.arguments}
+        # Gemini (via the OpenAI-compatible API) attaches a `thought_signature`
+        # inside `extra_content` on each tool call. It must be echoed back on
+        # subsequent turns or the API rejects the request, so preserve it.
+        extra_content = (tool_call.model_extra or {}).get("extra_content")
         content_blocks.append(
             ToolUseBlockParam(
                 id=tool_call.id,
                 name=tool_call.function.name,
                 input=arguments,
+                extra_content=extra_content
+                if isinstance(extra_content, dict)
+                else None,
             )
         )
 
