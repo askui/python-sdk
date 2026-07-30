@@ -20,7 +20,7 @@ with ComputerAgent() as agent:
 
 If you want to use another model, you select one of the available ones and set as an environment variable (**currently only supported for vlm_provider!**):
 ```
-VLM_PROVIDER_MODEL_ID=claude-opus-4-6
+VLM_PROVIDER_MODEL_ID=claude-opus-5
 ```
 
 Alternatively, you can also set it through overriding the model_id in the provider:
@@ -30,7 +30,7 @@ from askui import AgentSettings, ComputerAgent
 from askui.model_providers import AskUIVlmProvider, AskUIImageQAProvider
 
 with ComputerAgent(settings=AgentSettings(
-    vlm_provider=AskUIVlmProvider(model_id="claude-opus-4-6"),
+    vlm_provider=AskUIVlmProvider(model_id="claude-opus-5"),
     image_qa_provider=AskUIImageQAProvider(model_id="gemini-2.5-pro"),
 )) as agent:
     agent.act("Complete the checkout process")
@@ -38,12 +38,11 @@ with ComputerAgent(settings=AgentSettings(
 
 The following models are available with your AskUI credentials through the AskUI API:
 
-**VLM Provider** (for `act()`): Claude models via AskUI's Anthropic proxy
+**VLM Provider** (for `act()`):
 - `claude-haiku-4-5-20251001` (most cost efficient)
-- `claude-sonnet-4-5-20250929`
-- `claude-opus-4-5-20251101`
-- `claude-sonnet-4-6`(default)
-- `claude-opus-4-6` (most capable)
+- - `gemini-3.5-flash` (fastest)
+- `claude-sonnet-5`(default)
+- `claude-opus-5` (most capable)
 
 
 **Image Q&A Provider** (for `get()`): Gemini models via AskUI's Gemini proxy
