@@ -291,8 +291,15 @@ def _from_openai_response(response: ChatCompletion) -> MessageParam:
         cached_tokens: int | None = None
         if response.usage.prompt_tokens_details is not None:
             cached_tokens = response.usage.prompt_tokens_details.cached_tokens
+        # OpenAI-style usage counts cached tokens INSIDE prompt_tokens, while
+        # `UsageParam` consumers (statistics callback, reporting) expect
+        # Anthropic-style disjoint fields — subtract so cached tokens are
+        # never counted or billed twice.
+        input_tokens = response.usage.prompt_tokens
+        if isinstance(cached_tokens, int) and cached_tokens > 0:
+            input_tokens = max(0, input_tokens - cached_tokens)
         usage = UsageParam(
-            input_tokens=response.usage.prompt_tokens,
+            input_tokens=input_tokens,
             output_tokens=response.usage.completion_tokens,
             cache_read_input_tokens=cached_tokens,
         )

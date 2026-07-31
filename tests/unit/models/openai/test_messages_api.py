@@ -41,8 +41,14 @@ def _make_completion(
     finish_reason: str = "stop",
     prompt_tokens: int = 10,
     completion_tokens: int = 20,
+    cached_tokens: int | None = None,
 ) -> ChatCompletion:
     """Create a mock ChatCompletion response."""
+    prompt_tokens_details = None
+    if cached_tokens is not None:
+        from openai.types.completion_usage import PromptTokensDetails
+
+        prompt_tokens_details = PromptTokensDetails(cached_tokens=cached_tokens)
     return ChatCompletion(
         id="chatcmpl-test",
         choices=[
@@ -63,6 +69,7 @@ def _make_completion(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,
+            prompt_tokens_details=prompt_tokens_details,
         ),
     )
 
@@ -455,6 +462,31 @@ class TestFromOpenaiResponse:
         assert result.usage is not None
         assert result.usage.input_tokens == 50
         assert result.usage.output_tokens == 100
+
+    def test_cached_tokens_are_subtracted_from_input(self) -> None:
+        """OpenAI reports cached tokens as a SUBSET of prompt_tokens;
+        `UsageParam` consumers expect disjoint fields (Anthropic style).
+        Without the subtraction, cached tokens are counted and billed twice
+        (statistics callback, reporting)."""
+        completion = _make_completion(
+            content="ok",
+            prompt_tokens=1000,
+            completion_tokens=50,
+            cached_tokens=400,
+        )
+        result = _from_openai_response(completion)
+        assert result.usage is not None
+        assert result.usage.input_tokens == 600  # 1000 - 400 cached
+        assert result.usage.cache_read_input_tokens == 400
+        assert result.usage.output_tokens == 50
+
+    def test_cached_tokens_never_drive_input_negative(self) -> None:
+        completion = _make_completion(
+            content="ok", prompt_tokens=100, completion_tokens=5, cached_tokens=150
+        )
+        result = _from_openai_response(completion)
+        assert result.usage is not None
+        assert result.usage.input_tokens == 0
 
 
 class TestOpenAIMessagesApi:
