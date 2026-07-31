@@ -12,6 +12,7 @@ from askui.locators.locators import Locator
 from askui.models.models import Point
 from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import ActSettings, MessageSettings
+from askui.models.shared.thinking import make_non_thinking_settings
 from askui.models.shared.tools import Tool
 from askui.models.shared.truncation_strategies import TruncationStrategy
 from askui.prompts.act_prompts import create_android_agent_prompt
@@ -116,12 +117,13 @@ class AndroidAgent(Agent):
             image_scaler=self._vlm_provider.image_scaler,
         )
         self.act_tool_collection.add_agent_os(self.act_agent_os_facade)
-        # Override default act settings with Android-specific settings
+        # Override default act settings with Android-specific settings:
+        # thinking disabled, temperature 0 — where the model still accepts
+        # those (newer generations reject one or both).
         self.act_settings = ActSettings(
             messages=MessageSettings(
                 system=create_android_agent_prompt(),
-                thinking={"type": "disabled"},
-                temperature=0.0,
+                **make_non_thinking_settings(self._vlm_provider.model_id),
             ),
         )
 

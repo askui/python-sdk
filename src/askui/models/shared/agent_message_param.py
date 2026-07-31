@@ -136,8 +136,9 @@ ToolParam = dict[str, Any]
 # adaptive thinking (`thinking={"type": "adaptive"}`). It replaces the integer
 # `budget_tokens` used with `thinking={"type": "enabled", ...}` on older models.
 # Anthropic maps this to `output_config.effort`; providers that do not support
-# it (e.g. OpenAI chat) ignore it.
-EffortLevel = Literal["low", "medium", "high", "max"]
+# it (e.g. OpenAI chat) ignore it. "xhigh" (between "high" and "max") is
+# supported from the Opus 4.7 generation onward; the 4.6 generation rejects it.
+EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class UsageParam(BaseModel):
