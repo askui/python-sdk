@@ -17,7 +17,9 @@ from askui.models.openai.messages_api import (
     _map_finish_reason,
     _serialize_tool_result_content,
     _to_openai_messages,
+    _to_openai_tool_choice,
     _to_openai_tools,
+    _to_reasoning_effort,
 )
 from askui.models.shared.agent_message_param import (
     Base64ImageSourceParam,
@@ -489,6 +491,39 @@ class TestFromOpenaiResponse:
         assert result.usage.input_tokens == 0
 
 
+class TestToOpenaiToolChoice:
+    def test_specific_tool_becomes_forced_function(self) -> None:
+        result = _to_openai_tool_choice({"type": "tool", "name": "emit_result"})
+        assert result == {
+            "type": "function",
+            "function": {"name": "emit_result"},
+        }
+
+    def test_any_becomes_required(self) -> None:
+        assert _to_openai_tool_choice({"type": "any"}) == "required"
+
+    def test_auto_and_none_pass_through(self) -> None:
+        assert _to_openai_tool_choice({"type": "auto"}) == "auto"
+        assert _to_openai_tool_choice({"type": "none"}) == "none"
+
+    def test_unknown_type_is_omitted(self) -> None:
+        assert _to_openai_tool_choice({"type": "something_new"}) is None
+
+
+class TestToReasoningEffort:
+    def test_disabled_maps_to_minimal(self) -> None:
+        assert _to_reasoning_effort({"type": "disabled"}) == "minimal"
+
+    def test_adaptive_omits_parameter(self) -> None:
+        assert _to_reasoning_effort({"type": "adaptive"}) is None
+
+    def test_enabled_omits_parameter(self) -> None:
+        assert _to_reasoning_effort({"type": "enabled", "budget_tokens": 1024}) is None
+
+    def test_explicit_effort_passed_through(self) -> None:
+        assert _to_reasoning_effort({"type": "adaptive", "effort": "high"}) == "high"
+
+
 class TestOpenAIMessagesApi:
     def test_create_message_delegates_to_client(self) -> None:
         mock_client = MagicMock()
@@ -549,3 +584,107 @@ class TestOpenAIMessagesApi:
         assert "max_tokens" not in call_kwargs
         assert "temperature" not in call_kwargs
         assert "tools" not in call_kwargs
+        assert "tool_choice" not in call_kwargs
+        assert "reasoning_effort" not in call_kwargs
+
+    def _mock_tools(self) -> MagicMock:
+        mock_tools = MagicMock()
+        mock_tools.to_params.return_value = [
+            {
+                "name": "emit_result",
+                "description": "Emit",
+                "input_schema": {"type": "object"},
+            }
+        ]
+        return mock_tools
+
+    def test_forced_tool_choice_sent_in_openai_format(self) -> None:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_completion(
+            content="ok"
+        )
+
+        api = OpenAIMessagesApi(client=mock_client)
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="test",
+            tools=self._mock_tools(),
+            tool_choice={"type": "tool", "name": "emit_result"},
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["tool_choice"] == {
+            "type": "function",
+            "function": {"name": "emit_result"},
+        }
+
+    def test_tool_choice_omitted_without_tools(self) -> None:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_completion(
+            content="ok"
+        )
+
+        api = OpenAIMessagesApi(client=mock_client)
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="test",
+            tool_choice={"type": "tool", "name": "emit_result"},
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "tool_choice" not in call_kwargs
+
+    def test_thinking_disabled_sends_minimal_reasoning_effort(self) -> None:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_completion(
+            content="ok"
+        )
+
+        api = OpenAIMessagesApi(client=mock_client)
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="test",
+            thinking={"type": "disabled"},
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["reasoning_effort"] == "minimal"
+
+    def test_thinking_adaptive_omits_reasoning_effort(self) -> None:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_completion(
+            content="ok"
+        )
+
+        api = OpenAIMessagesApi(client=mock_client)
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="test",
+            thinking={"type": "adaptive"},
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert "reasoning_effort" not in call_kwargs
+
+    def test_provider_options_override_mapped_params(self) -> None:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _make_completion(
+            content="ok"
+        )
+
+        api = OpenAIMessagesApi(client=mock_client)
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="test",
+            tools=self._mock_tools(),
+            tool_choice={"type": "tool", "name": "emit_result"},
+            thinking={"type": "disabled"},
+            provider_options={
+                "tool_choice": "auto",
+                "reasoning_effort": "high",
+            },
+        )
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["tool_choice"] == "auto"
+        assert call_kwargs["reasoning_effort"] == "high"

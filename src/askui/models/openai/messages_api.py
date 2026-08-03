@@ -216,6 +216,50 @@ def _convert_user_message(
         result.append({"role": "user", "content": tool_result_media})
 
 
+_TOOL_CHOICE_TYPE_MAP: dict[str, str] = {
+    "auto": "auto",
+    "any": "required",
+    "none": "none",
+}
+
+
+def _to_openai_tool_choice(
+    tool_choice: ToolChoiceParam,
+) -> str | dict[str, Any] | None:
+    """Convert an internal (Anthropic-style) ``tool_choice`` to OpenAI format.
+
+    ``{"type": "tool", "name": N}`` forces one specific function;
+    ``"any"`` maps to OpenAI's ``"required"``. Unknown types are omitted
+    (with a warning) rather than failing the call.
+    """
+    choice_type = tool_choice.get("type")
+    if choice_type == "tool":
+        return {"type": "function", "function": {"name": tool_choice["name"]}}
+    mapped = _TOOL_CHOICE_TYPE_MAP.get(choice_type) if choice_type else None
+    if mapped is None:
+        logger.warning(
+            "Unsupported tool_choice for OpenAI-compatible API, omitting",
+            extra={"tool_choice": tool_choice},
+        )
+    return mapped
+
+
+def _to_reasoning_effort(thinking: ThinkingConfigParam) -> str | None:
+    """Convert an internal ``thinking`` config to an OpenAI ``reasoning_effort``.
+
+    An explicit ``"effort"`` key is passed through verbatim. Otherwise
+    ``{"type": "disabled"}`` maps to ``"minimal"`` (suppress reasoning);
+    ``"adaptive"``/``"enabled"`` return ``None`` so the parameter is omitted
+    and the model applies its own default reasoning.
+    """
+    effort = thinking.get("effort")
+    if isinstance(effort, str):
+        return effort
+    if thinking.get("type") == "disabled":
+        return "minimal"
+    return None
+
+
 def _to_openai_tools(tools: ToolCollection) -> list[dict[str, Any]]:
     """Convert a `ToolCollection` to OpenAI function-calling tool format.
 
@@ -321,6 +365,41 @@ def _from_openai_response(response: ChatCompletion) -> MessageParam:
     )
 
 
+def _optional_request_kwargs(
+    tools: ToolCollection | None,
+    max_tokens: int | None,
+    thinking: ThinkingConfigParam | None,
+    tool_choice: ToolChoiceParam | None,
+    temperature: float | None,
+) -> dict[str, Any]:
+    """Build the optional ``chat.completions.create`` kwargs, omitting unset ones."""
+    kwargs: dict[str, Any] = {}
+
+    if max_tokens is not None:
+        kwargs["max_completion_tokens"] = max_tokens
+
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+
+    if tools is not None:
+        openai_tools = _to_openai_tools(tools)
+        if openai_tools:
+            kwargs["tools"] = openai_tools
+
+    # OpenAI rejects tool_choice without tools, so only send it alongside them.
+    if tool_choice is not None and "tools" in kwargs:
+        openai_tool_choice = _to_openai_tool_choice(tool_choice)
+        if openai_tool_choice is not None:
+            kwargs["tool_choice"] = openai_tool_choice
+
+    if thinking is not None:
+        reasoning_effort = _to_reasoning_effort(thinking)
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
+
+    return kwargs
+
+
 #: A hook to post-process the OpenAI-format ``messages`` list right before it is
 #: sent to the chat/completions endpoint. Receives (and returns) the list of
 #: OpenAI message dicts. Useful for OpenAI-compatible gateways that deviate from
@@ -347,8 +426,8 @@ class OpenAIMessagesApi(MessagesApi):
         tools: ToolCollection | None = None,
         max_tokens: int | None = None,
         system: SystemPrompt | None = None,
-        thinking: ThinkingConfigParam | None = None,  # noqa: ARG002
-        tool_choice: ToolChoiceParam | None = None,  # noqa: ARG002
+        thinking: ThinkingConfigParam | None = None,
+        tool_choice: ToolChoiceParam | None = None,
         temperature: float | None = None,
         provider_options: dict[str, Any] | None = None,
     ) -> MessageParam:
@@ -360,8 +439,14 @@ class OpenAIMessagesApi(MessagesApi):
             tools: Tools available to the model for function-calling.
             max_tokens: Maximum tokens to generate.
             system: System prompt.
-            thinking: Ignored (not supported by the OpenAI chat API).
-            tool_choice: Ignored.
+            thinking: Mapped to ``reasoning_effort``: an explicit ``"effort"``
+                key is passed through, ``{"type": "disabled"}`` becomes
+                ``"minimal"``, ``"adaptive"``/``"enabled"`` omit the parameter
+                (model default). Only send this to models that accept
+                ``reasoning_effort``.
+            tool_choice: Mapped to the OpenAI ``tool_choice`` format
+                (``{"type": "tool", "name": N}`` forces the named function,
+                ``"any"`` becomes ``"required"``).
             temperature: Sampling temperature.
             provider_options: Additional keyword arguments forwarded directly
                 to the OpenAI ``chat.completions.create`` call (e.g.
@@ -380,17 +465,15 @@ class OpenAIMessagesApi(MessagesApi):
             "stream": False,
             "timeout": 300.0,
         }
-
-        if max_tokens is not None:
-            kwargs["max_completion_tokens"] = max_tokens
-
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-
-        if tools is not None:
-            openai_tools = _to_openai_tools(tools)
-            if openai_tools:
-                kwargs["tools"] = openai_tools
+        kwargs.update(
+            _optional_request_kwargs(
+                tools=tools,
+                max_tokens=max_tokens,
+                thinking=thinking,
+                tool_choice=tool_choice,
+                temperature=temperature,
+            )
+        )
 
         if provider_options is not None:
             kwargs.update(provider_options)
