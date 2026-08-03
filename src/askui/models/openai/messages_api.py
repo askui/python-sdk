@@ -248,7 +248,9 @@ def _to_reasoning_effort(thinking: ThinkingConfigParam) -> str | None:
     """Convert an internal ``thinking`` config to an OpenAI ``reasoning_effort``.
 
     An explicit ``"effort"`` key is passed through verbatim. Otherwise
-    ``{"type": "disabled"}`` maps to ``"minimal"`` (suppress reasoning);
+    ``{"type": "disabled"}`` maps to ``"none"`` — the only value accepted
+    alongside function tools on chat completions for current reasoning
+    models (``"minimal"`` is rejected there with a 400);
     ``"adaptive"``/``"enabled"`` return ``None`` so the parameter is omitted
     and the model applies its own default reasoning.
     """
@@ -256,7 +258,7 @@ def _to_reasoning_effort(thinking: ThinkingConfigParam) -> str | None:
     if isinstance(effort, str):
         return effort
     if thinking.get("type") == "disabled":
-        return "minimal"
+        return "none"
     return None
 
 
@@ -441,7 +443,7 @@ class OpenAIMessagesApi(MessagesApi):
             system: System prompt.
             thinking: Mapped to ``reasoning_effort``: an explicit ``"effort"``
                 key is passed through, ``{"type": "disabled"}`` becomes
-                ``"minimal"``, ``"adaptive"``/``"enabled"`` omit the parameter
+                ``"none"``, ``"adaptive"``/``"enabled"`` omit the parameter
                 (model default). Only send this to models that accept
                 ``reasoning_effort``.
             tool_choice: Mapped to the OpenAI ``tool_choice`` format

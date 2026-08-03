@@ -511,8 +511,8 @@ class TestToOpenaiToolChoice:
 
 
 class TestToReasoningEffort:
-    def test_disabled_maps_to_minimal(self) -> None:
-        assert _to_reasoning_effort({"type": "disabled"}) == "minimal"
+    def test_disabled_maps_to_none(self) -> None:
+        assert _to_reasoning_effort({"type": "disabled"}) == "none"
 
     def test_adaptive_omits_parameter(self) -> None:
         assert _to_reasoning_effort({"type": "adaptive"}) is None
@@ -634,7 +634,7 @@ class TestOpenAIMessagesApi:
         call_kwargs = mock_client.chat.completions.create.call_args[1]
         assert "tool_choice" not in call_kwargs
 
-    def test_thinking_disabled_sends_minimal_reasoning_effort(self) -> None:
+    def test_thinking_disabled_sends_none_reasoning_effort(self) -> None:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _make_completion(
             content="ok"
@@ -648,7 +648,7 @@ class TestOpenAIMessagesApi:
         )
 
         call_kwargs = mock_client.chat.completions.create.call_args[1]
-        assert call_kwargs["reasoning_effort"] == "minimal"
+        assert call_kwargs["reasoning_effort"] == "none"
 
     def test_thinking_adaptive_omits_reasoning_effort(self) -> None:
         mock_client = MagicMock()
