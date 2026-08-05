@@ -9,6 +9,8 @@ from typing_extensions import override
 
 from askui.model_providers.vlm_provider import VlmProvider
 from askui.models.openai.messages_api import MessageTransform, OpenAIMessagesApi
+from askui.models.openai.responses_api import OpenAIResponsesApi
+from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.agent_message_param import (
     MessageParam,
     ThinkingConfigParam,
@@ -35,6 +37,14 @@ class OpenAIVlmProvider(VlmProvider):
     other service that exposes an OpenAI-compatible ``/v1/chat/completions``
     endpoint.
 
+    Backend selection is automatic: against the OpenAI platform itself
+    (default ``base_url``) requests go through the Responses API
+    (``/v1/responses``) — the only OpenAI endpoint that accepts reasoning and
+    function tools in the same request, with encrypted reasoning items
+    replayed across turns (stateless, ``store=False``). Any custom
+    ``base_url`` (Ollama, vLLM, gateways) keeps using chat completions,
+    which is what compatible servers implement.
+
     Args:
         model_id (str): Model name to use.
         api_key (str | None, optional): API key. Reads ``OPENAI_API_KEY``
@@ -58,7 +68,8 @@ class OpenAIVlmProvider(VlmProvider):
             sent. Receives and returns the list of OpenAI message dicts. Use it
             for OpenAI-compatible gateways that deviate from the stock chat spec
             (e.g. stricter message-ordering or content rules). ``None`` (default)
-            sends the messages unchanged.
+            sends the messages unchanged. Chat completions only — not applied
+            on the Responses API path.
 
     Example:
         ```python
@@ -141,8 +152,14 @@ class OpenAIVlmProvider(VlmProvider):
         return self._image_scaler
 
     @cached_property
-    def _messages_api(self) -> OpenAIMessagesApi:
-        """Lazily initialise the `OpenAIMessagesApi` on first use."""
+    def _messages_api(self) -> MessagesApi:
+        """Lazily initialise the messages API backend on first use.
+
+        The check runs on the resolved client ``base_url`` so it also honors
+        ``OPENAI_BASE_URL`` from the environment and pre-configured clients.
+        """
+        if "api.openai.com" in str(self._client.base_url):
+            return OpenAIResponsesApi(client=self._client)
         return OpenAIMessagesApi(
             client=self._client,
             message_transform=self._message_transform,

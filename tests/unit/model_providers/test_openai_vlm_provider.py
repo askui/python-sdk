@@ -193,3 +193,21 @@ class TestMapToTarget:
     def test_normalized_one(self) -> None:
         cs = NormalizedCoordinateSpace()
         assert cs.map_to_target(1.0, 1.0, (1024, 768)) == (1024, 768)
+
+
+class TestBackendRouting:
+    def test_default_base_url_uses_responses_api(self) -> None:
+        from askui.models.openai.responses_api import OpenAIResponsesApi
+
+        provider = OpenAIVlmProvider(model_id="gpt-5.6-terra", api_key="sk-x")
+        assert isinstance(provider._messages_api, OpenAIResponsesApi)
+
+    def test_custom_base_url_uses_chat_completions(self) -> None:
+        from askui.models.openai.messages_api import OpenAIMessagesApi
+
+        provider = OpenAIVlmProvider(
+            model_id="qwen2.5vl",
+            api_key="sk-x",
+            base_url="http://localhost:11434/v1",
+        )
+        assert isinstance(provider._messages_api, OpenAIMessagesApi)
