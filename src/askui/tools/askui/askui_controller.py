@@ -378,6 +378,28 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         """
         self.disconnect()
 
+    @staticmethod
+    def _check_bitmap_dimensions(width: int, height: int) -> None:
+        """Raise `AskUiControllerError` when the captured bitmap has zero dimensions.
+
+        A zero-size bitmap is returned when the display is unavailable, minimized,
+        or otherwise unable to produce a frame. PIL cannot encode such an image,
+        so we reject it here before it reaches the reporter or the model.
+
+        Args:
+            width (int): Bitmap width returned by `CaptureScreen`.
+            height (int): Bitmap height returned by `CaptureScreen`.
+
+        Raises:
+            AskUiControllerError: If either `width` or `height` is zero.
+        """
+        if width == 0 or height == 0:
+            error_msg = (
+                f"Screen capture returned an empty bitmap ({width}×{height}). "
+                "The display may be unavailable, minimized, or zero-sized."
+            )
+            raise AskUiControllerError(error_msg)
+
     @telemetry.record_call()
     @override
     def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
@@ -403,9 +425,12 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
                 ),
             )
         )
+        width = screenResponse.bitmap.width
+        height = screenResponse.bitmap.height
+        self._check_bitmap_dimensions(width, height)
         r, g, b, _ = Image.frombytes(
             "RGBA",
-            (screenResponse.bitmap.width, screenResponse.bitmap.height),
+            (width, height),
             screenResponse.bitmap.data,
         ).split()
         image = Image.merge("RGB", (b, g, r))

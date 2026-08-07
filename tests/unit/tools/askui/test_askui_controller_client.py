@@ -214,3 +214,22 @@ class TestUsesAgentOsTargetComputerManager:
             agent_os_target_computers=[_make_local(computer_id="l")]
         )
         assert isinstance(client.agent_os_target_computer_manager, ComputerTargetPool)
+
+
+class TestScreenshotValidation:
+    """_check_bitmap_dimensions() raises AskUiControllerError for zero-size bitmaps."""
+
+    def test_zero_width_raises(self) -> None:
+        with pytest.raises(AskUiControllerError, match="empty bitmap"):
+            MultiComputerTargetAgentOS._check_bitmap_dimensions(0, 100)
+
+    def test_zero_height_raises(self) -> None:
+        with pytest.raises(AskUiControllerError, match="empty bitmap"):
+            MultiComputerTargetAgentOS._check_bitmap_dimensions(100, 0)
+
+    def test_zero_by_zero_raises(self) -> None:
+        with pytest.raises(AskUiControllerError, match="empty bitmap"):
+            MultiComputerTargetAgentOS._check_bitmap_dimensions(0, 0)
+
+    def test_valid_dimensions_do_not_raise(self) -> None:
+        MultiComputerTargetAgentOS._check_bitmap_dimensions(1920, 1080)

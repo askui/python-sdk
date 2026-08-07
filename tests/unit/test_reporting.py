@@ -7,7 +7,9 @@ rather than dumping the full encoded payload into the report.
 
 from typing import Any
 
-from askui.reporting import truncate_base64_media
+from PIL import Image
+
+from askui.reporting import normalize_to_pil_images, truncate_base64_media
 
 
 def _base64_source(media_type: str) -> dict[str, Any]:
@@ -58,3 +60,40 @@ class TestTruncateBase64Media:
             "type": "text",
             "text": "hello",
         }
+
+
+class TestNormalizeToPilImages:
+    def test_none_returns_empty_list(self) -> None:
+        assert normalize_to_pil_images(None) == []
+
+    def test_single_valid_image_is_wrapped_in_list(self) -> None:
+        img = Image.new("RGB", (10, 10))
+        result = normalize_to_pil_images(img)
+        assert result == [img]
+
+    def test_list_of_valid_images_is_returned_as_is(self) -> None:
+        images = [Image.new("RGB", (10, 10)), Image.new("RGB", (20, 20))]
+        result = normalize_to_pil_images(images)
+        assert result == images
+
+    def test_zero_width_image_is_filtered_out(self) -> None:
+        empty = Image.new("RGB", (0, 5))
+        valid = Image.new("RGB", (10, 10))
+        result = normalize_to_pil_images([empty, valid])
+        assert result == [valid]
+
+    def test_zero_height_image_is_filtered_out(self) -> None:
+        empty = Image.new("RGB", (5, 0))
+        valid = Image.new("RGB", (10, 10))
+        result = normalize_to_pil_images([empty, valid])
+        assert result == [valid]
+
+    def test_zero_by_zero_image_is_filtered_out(self) -> None:
+        result = normalize_to_pil_images(Image.new("RGB", (0, 0)))
+        assert result == []
+
+    def test_list_of_only_empty_images_returns_empty_list(self) -> None:
+        result = normalize_to_pil_images(
+            [Image.new("RGB", (0, 0)), Image.new("RGB", (0, 5))]
+        )
+        assert result == []
