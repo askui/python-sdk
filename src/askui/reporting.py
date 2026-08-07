@@ -47,7 +47,17 @@ def normalize_to_pil_images(
         images = image
     else:
         images = [image]
-    return [img for img in images if img.width > 0 and img.height > 0]
+    valid = []
+    for img in images:
+        if img.width == 0 or img.height == 0:
+            logger.warning(
+                "Skipping zero-size image (%dx%d) — cannot encode an empty image.",
+                img.width,
+                img.height,
+            )
+        else:
+            valid.append(img)
+    return valid
 
 
 def _format_duration(seconds: float) -> str:
