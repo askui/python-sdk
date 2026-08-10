@@ -34,14 +34,30 @@ if TYPE_CHECKING:
 def normalize_to_pil_images(
     image: Image.Image | list[Image.Image] | AnnotatedImage | None,
 ) -> list[Image.Image]:
-    """Normalize various image input types to a list of PIL images."""
+    """Normalize various image input types to a list of PIL images.
+
+    Zero-size images (width or height of 0) are filtered out because PIL
+    cannot encode them to PNG, which would crash any reporter that tries.
+    """
     if image is None:
         return []
     if isinstance(image, AnnotatedImage):
-        return image.get_images()
-    if isinstance(image, list):
-        return image
-    return [image]
+        images: list[Image.Image] = image.get_images()
+    elif isinstance(image, list):
+        images = image
+    else:
+        images = [image]
+    valid = []
+    for img in images:
+        if img.width == 0 or img.height == 0:
+            logger.warning(
+                "Skipping zero-size image (%dx%d) — cannot encode an empty image.",
+                img.width,
+                img.height,
+            )
+        else:
+            valid.append(img)
+    return valid
 
 
 def _format_duration(seconds: float) -> str:
