@@ -28,9 +28,11 @@ class ComputerGetFileNamesTool(ComputerBaseTool):
             name="get_file_names_tool",
             description=(
                 "Lists the names of regular files in an absolute directory on the "
-                "computer under automation. Subdirectories are not included—only "
-                "files are returned. Use absolute paths as on the target machine. "
-                "Returns names only; use get_file_tool to read a file's contents."
+                "computer under automation. IMPORTANT: only files are returned - "
+                "folders and subdirectories are NOT included in the result and this "
+                "tool cannot be used to discover or navigate them. Use absolute "
+                "paths as on the target machine. Returns names only; use "
+                "get_file_tool to read a file's contents."
             ),
             input_schema={
                 "type": "object",
