@@ -28,6 +28,7 @@ from askui.tools.askui.agent_os_target_computer import (
 )
 from askui.tools.askui.askui_ui_controller_grpc.desktop_agent_os_error import (
     DesktopAgentOsError,
+    DesktopAgentOsException,
 )
 from askui.tools.askui.askui_ui_controller_grpc.generated import (
     Controller_V1_pb2 as controller_v1_pbs,
@@ -1442,7 +1443,7 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             message = f"unexpected response type: {res}"
             raise DesktopAgentOsError(message)
         if res.error is not None:
-            raise DesktopAgentOsError(res.error)
+            raise DesktopAgentOsException(res.error)
         if res.response is None:
             message = f"{type(res).__name__} is missing both error and response"
             raise DesktopAgentOsError(message)
@@ -1472,7 +1473,10 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             Image.Image | PdfSource | str: The decoded file contents.
 
         Raises:
-            DesktopAgentOsError: If the file cannot be read or the response is invalid.
+            DesktopAgentOsException: If the file cannot be read (e.g. the path
+                does not exist or its contents cannot be decoded).
+            DesktopAgentOsError: If the controller response violates the expected
+                protocol.
         """
         self._reporter.add_message(self._REPORTER_SOURCE, f"get_file({path})")
         command = GetFileCommand(parameters=[path])
@@ -1481,7 +1485,7 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             message = f"unexpected response type: {res}"
             raise DesktopAgentOsError(message)
         if res.error is not None:
-            raise DesktopAgentOsError(res.error)
+            raise DesktopAgentOsException(res.error)
         if res.response is None:
             message = f"{type(res).__name__} is missing both error and response"
             raise DesktopAgentOsError(message)
@@ -1535,7 +1539,7 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             except UnicodeDecodeError:
                 pass
         message = "File contents are neither a supported image, PDF, nor UTF-8 text"
-        raise DesktopAgentOsError(message)
+        raise DesktopAgentOsException(message)
 
 
 AskUiControllerClient = MultiComputerTargetAgentOS
