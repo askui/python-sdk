@@ -159,10 +159,17 @@ def make_thinking_settings(
             **make_thinking_settings(self._vlm_provider.model_id),
         )
 
-    Models that support adaptive thinking get ``thinking={"type": "adaptive"}``
-    (with ``effort`` sent via ``provider_options["output_config"]`` when given);
-    older models get a fixed token budget of
-    ``thinking={"type": "enabled", "budget_tokens": 2048}`` and ignore ``effort``.
+    Models that support adaptive thinking get
+    ``thinking={"type": "adaptive", "display": "summarized"}`` (with ``effort``
+    sent via ``provider_options["output_config"]`` when given); older models
+    get a fixed token budget of
+    ``thinking={"type": "enabled", "budget_tokens": 2048}`` and ignore
+    ``effort``. ``display`` is set explicitly because the newest adaptive
+    models (Sonnet 5 generation onward) default it to ``"omitted"``, which
+    returns thinking blocks whose text is EMPTY while the full thinking
+    tokens are still billed — reasoning silently disappears from reports and
+    logs. ``"summarized"`` restores the visible text at no extra cost (billing
+    is identical for both display modes).
 
     Args:
         model_id (str): The model identifier (bare or gateway-prefixed).
@@ -176,7 +183,9 @@ def make_thinking_settings(
             when applicable, ``provider_options``).
     """
     if uses_adaptive_thinking(model_id):
-        settings: dict[str, Any] = {"thinking": {"type": "adaptive"}}
+        settings: dict[str, Any] = {
+            "thinking": {"type": "adaptive", "display": "summarized"}
+        }
         if effort is not None:
             settings["provider_options"] = {"output_config": {"effort": effort}}
         return settings

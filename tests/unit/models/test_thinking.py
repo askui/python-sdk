@@ -50,7 +50,9 @@ _BUDGET_MODELS = [
 @pytest.mark.parametrize("model_id", _ADAPTIVE_MODELS)
 def test_adaptive_models_use_adaptive_thinking(model_id: str) -> None:
     assert uses_adaptive_thinking(model_id) is True
-    assert make_thinking_settings(model_id) == {"thinking": {"type": "adaptive"}}
+    assert make_thinking_settings(model_id) == {
+        "thinking": {"type": "adaptive", "display": "summarized"}
+    }
 
 
 @pytest.mark.parametrize("model_id", _BUDGET_MODELS)
@@ -63,7 +65,7 @@ def test_other_models_use_budget_tokens(model_id: str) -> None:
 
 def test_effort_is_added_via_provider_options_for_adaptive_models() -> None:
     assert make_thinking_settings("claude-sonnet-5", effort="high") == {
-        "thinking": {"type": "adaptive"},
+        "thinking": {"type": "adaptive", "display": "summarized"},
         "provider_options": {"output_config": {"effort": "high"}},
     }
 
@@ -139,6 +141,6 @@ def test_non_thinking_settings_omit_thinking_on_always_on_models() -> None:
 
 def test_effort_supports_xhigh() -> None:
     assert make_thinking_settings("claude-opus-4-8", effort="xhigh") == {
-        "thinking": {"type": "adaptive"},
+        "thinking": {"type": "adaptive", "display": "summarized"},
         "provider_options": {"output_config": {"effort": "xhigh"}},
     }
