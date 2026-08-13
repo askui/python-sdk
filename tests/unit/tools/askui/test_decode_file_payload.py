@@ -14,7 +14,7 @@ from PIL import Image
 
 from askui.tools.askui.askui_controller import (
     AskUiControllerClient,
-    DesktopAgentOsError,
+    DesktopAgentOsException,
 )
 from askui.utils.pdf_utils import PdfSource
 
@@ -47,5 +47,5 @@ class TestDecodeFilePayload:
         assert result == "hello world"
 
     def test_rejects_unsupported_binary(self) -> None:
-        with pytest.raises(DesktopAgentOsError):
+        with pytest.raises(DesktopAgentOsException):
             AskUiControllerClient._decode_file_payload(_b64(b"\x00\x01\x02\x03"))
