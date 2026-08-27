@@ -98,11 +98,22 @@ execution_settings = CacheExecutionSettings(
 
 #### Parameters
 
-- **`delay_time_between_actions`**: The time to wait (in seconds) between executing consecutive cached actions. This delay helps ensure UI elements can materialize before the next action is executed. Defaults to `1.0` seconds.
+- **`delay_time_between_actions`**: The time to wait (in seconds) between executing consecutive cached actions during replay. This delay helps ensure UI elements can materialize before the next action is executed. Defaults to `1.0` seconds.
 
 You can adjust this value based on your application's responsiveness:
 - For faster applications or quick interactions, you might use a smaller delay (e.g., `0.2` or `0.5` seconds)
 - For slower applications or complex UI updates, you might need a longer delay (e.g., `2.0` or `3.0` seconds)
+
+> **Important:** the delay is a *playback* option, so it lives on `execution_settings`, **not** directly on `CachingSettings`:
+>
+> ```python
+> caching_settings = CachingSettings(
+>     strategy="execute",
+>     execution_settings=CacheExecutionSettings(delay_time_between_actions=3.0),
+> )
+> ```
+>
+> Passing `delay_time_between_actions` directly to `CachingSettings(...)` is a mistake and now raises a validation error (previously it was silently ignored and the default of `1.0`s was used).
 
 ## Usage Examples
 

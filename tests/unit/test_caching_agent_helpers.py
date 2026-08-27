@@ -5,14 +5,33 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from askui.agent_base import Agent
 from askui.models.shared.agent_message_param import MessageParam, TextBlockParam
 from askui.models.shared.settings import (
+    CacheExecutionSettings,
     CacheFile,
     CacheMetadata,
     CacheWritingSettings,
     CachingSettings,
 )
+
+
+class TestCachingSettingsRejectUnknownFields:
+    def test_misplaced_delay_raises_instead_of_being_ignored(self) -> None:
+        # delay_time_between_actions belongs on execution_settings, not here.
+        with pytest.raises(ValidationError):
+            CachingSettings(strategy="execute", delay_time_between_actions=3.0)  # type: ignore[call-arg]
+
+    def test_delay_on_execution_settings_is_applied(self) -> None:
+        settings = CachingSettings(
+            strategy="execute",
+            execution_settings=CacheExecutionSettings(delay_time_between_actions=3.0),
+        )
+        assert settings.execution_settings is not None
+        assert settings.execution_settings.delay_time_between_actions == 3.0
 
 
 def _cache_file(is_valid: bool = True, parameters: dict | None = None) -> CacheFile:

@@ -238,6 +238,10 @@ class CacheWritingSettings(BaseModel):
         visual_validation_region_size: Size of region to hash around coordinates
     """
 
+    # Reject unknown fields so a misplaced/misspelled setting raises instead of
+    # being silently ignored.
+    model_config = ConfigDict(extra="forbid")
+
     filename: str = ""
     parameter_identification_strategy: CACHE_PARAMETER_IDENTIFICATION_STRATEGY = "llm"
     visual_verification_method: CACHING_VISUAL_VERIFICATION_METHOD = "phash"
@@ -252,6 +256,10 @@ class CacheExecutionSettings(BaseModel):
         skip_visual_validation: Override to disable visual validation
         visual_validation_threshold: Max Hamming distance for validation
     """
+
+    # Reject unknown fields so a misplaced/misspelled setting raises instead of
+    # being silently ignored.
+    model_config = ConfigDict(extra="forbid")
 
     delay_time_between_actions: float = 1.0  # keep >1s to give UI time to materialize
     skip_visual_validation: bool = False
@@ -281,7 +289,19 @@ class CachingSettings(BaseModel):
             auto-generated filename.
         writing_settings: Settings for cache recording (used in "record"/"auto" modes)
         execution_settings: Settings for cache playback (used in "execute"/"auto" modes)
+
+    Note:
+        Playback options such as the delay between replayed actions live on
+        `execution_settings` (a `CacheExecutionSettings`), e.g.
+        `CachingSettings(execution_settings=CacheExecutionSettings(
+        delay_time_between_actions=3.0))`. Unknown top-level fields are rejected
+        so a misplaced option raises instead of being silently ignored.
     """
+
+    # Reject unknown fields so a misplaced/misspelled setting (e.g. passing
+    # delay_time_between_actions here instead of on execution_settings) raises
+    # instead of being silently ignored.
+    model_config = ConfigDict(extra="forbid")
 
     strategy: CACHING_STRATEGY | None = None
     cache_dir: str = ".askui_cache"
