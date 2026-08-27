@@ -1,11 +1,16 @@
 """Tests for CacheManager recording write/skip behavior."""
 
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from askui.models.shared.agent_message_param import MessageParam, ToolUseBlockParam
-from askui.models.shared.settings import CacheWritingSettings
+from askui.models.shared.settings import (
+    CacheFile,
+    CacheMetadata,
+    CacheWritingSettings,
+)
 from askui.models.shared.tools import Tool, ToolCollection
 from askui.utils.caching.cache_manager import CacheManager
 
@@ -86,3 +91,40 @@ def test_finish_recording_writes_when_cacheable_step_present() -> None:
         written = CacheManager.read_cache_file(out)
         assert written.metadata.version == "0.3"
         assert len(written.trajectory) == 1
+
+
+def test_finish_recording_creates_nested_directories() -> None:
+    """A filename with subdirectories is saved at the matching nested path."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        toolbox = ToolCollection(tools=[_CacheableTool(cacheable=True)])
+        tool_name = next(iter(toolbox.tool_map.keys()))
+
+        manager = CacheManager()
+        manager.start_recording(
+            cache_dir=temp_dir,
+            file_name="mytests_1/test_something.json",
+            toolbox=toolbox,
+            cache_writer_settings=CacheWritingSettings(
+                visual_verification_method="none"
+            ),
+        )
+        result = manager.finish_recording([_assistant_tool_use(tool_name)])
+
+        nested = Path(temp_dir) / "mytests_1" / "test_something.json"
+        assert nested.exists()
+        assert "Cache file written" in result
+
+
+def test_update_metadata_on_completion_creates_nested_directories() -> None:
+    """Metadata writes also create nested parents (never crash on missing dir)."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        nested = Path(temp_dir) / "suite" / "case.json"
+        cache_file = CacheFile(
+            metadata=CacheMetadata(created_at=datetime.now(tz=timezone.utc)),
+            trajectory=[],
+        )
+        manager = CacheManager()
+        manager.update_metadata_on_completion(cache_file, str(nested), success=True)
+
+        assert nested.exists()
+        assert CacheManager.read_cache_file(nested).metadata.execution_attempts == 1

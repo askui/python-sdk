@@ -54,6 +54,11 @@ class TestResolveTrajectoryPath:
             "dir/login.json"
         )
 
+    def test_preserves_nested_subdirectories(self) -> None:
+        assert Agent._resolve_trajectory_path(
+            ".askui_cache", "mytests_1/test_something"
+        ) == Path(".askui_cache/mytests_1/test_something.json")
+
 
 class TestReadTrajectoryIfPresent:
     def test_missing_file_returns_none(self) -> None:

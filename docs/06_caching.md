@@ -40,7 +40,19 @@ caching_settings = CachingSettings(
 
 - **`strategy`**: The caching strategy to use (`"execute"`, `"record"`, `"auto"`, or `None`).
 - **`cache_dir`**: Directory where cache files are stored. Defaults to `".askui_cache"`.
-- **`filename`**: Name of the trajectory/cache file for this test case (the `.json` suffix is optional). It is the lookup key in `"execute"`/`"auto"` modes and the target filename in `"record"`/`"auto"` modes. If empty, no trajectory is auto-detected and recordings receive an auto-generated filename.
+- **`filename`**: Name of the trajectory/cache file for this test case (the `.json` suffix is optional), resolved **relative to `cache_dir`**. It is the lookup key in `"execute"`/`"auto"` modes and the target filename in `"record"`/`"auto"` modes. If empty, no trajectory is auto-detected and recordings receive an auto-generated filename.
+
+  The filename may include **subdirectories**, which lets you mirror your test tree. The SDK does not derive it automatically from the running test file — you (or your test harness) supply it — but the same value is used for both lookup and recording, so save and load always agree. For example, for a test at `tests/mytests_1/test_something.py` you can set `filename="mytests_1/test_something"` (nested directories are created on record):
+
+  ```python
+  caching_settings = CachingSettings(
+      strategy="auto",
+      cache_dir=".askui_cache",
+      filename="mytests_1/test_something",  # -> .askui_cache/mytests_1/test_something.json
+  )
+  ```
+
+  A pytest harness can derive this from the test path, e.g. `filename=str(Path(request.node.path).relative_to(rootdir).with_suffix(""))`.
 - **`writing_settings`**: Configuration for cache recording (optional). See [Writing Settings](#writing-settings) below.
 - **`execution_settings`**: Configuration for cache playback (optional). See [Execution Settings](#execution-settings) below.
 

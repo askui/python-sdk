@@ -309,6 +309,7 @@ class CacheManager:
             cache_file_path: Path to write the cache file
         """
         cache_path = Path(cache_file_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_path.open("w", encoding="utf-8") as f:
             json.dump(
                 cache_file.model_dump(mode="json"),
@@ -380,7 +381,10 @@ class CacheManager:
         self._recording = True
         self._tool_blocks = []
         self._cache_dir = Path(cache_dir)
-        self._cache_dir.mkdir(exist_ok=True)
+        # `parents=True` so a nested cache_dir (e.g. ".askui_cache/mytests_1")
+        # is created. The per-file parent for nested filenames is created at
+        # write time in `_generate_cache_file` / `_write_cache_file`.
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._file_name = (
             file_name
             if file_name.endswith(".json") or not file_name
@@ -736,6 +740,7 @@ class CacheManager:
             cache_parameters=parameters_dict,
         )
 
+        cache_file_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_file_path.open("w", encoding="utf-8") as f:
             json.dump(cache_file.model_dump(mode="json"), f, indent=4)
         logger.info("Cache file successfully written: %s", cache_file_path)
