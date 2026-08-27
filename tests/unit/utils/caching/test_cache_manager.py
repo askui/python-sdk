@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from askui.models.shared.agent_message_param import MessageParam, ToolUseBlockParam
 from askui.models.shared.settings import (
     CacheFile,
@@ -12,7 +14,10 @@ from askui.models.shared.settings import (
     CacheWritingSettings,
 )
 from askui.models.shared.tools import Tool, ToolCollection
-from askui.utils.caching.cache_manager import CacheManager
+from askui.utils.caching.cache_manager import (
+    CacheManager,
+    ensure_relative_cache_filename,
+)
 
 
 class _CacheableTool(Tool):
@@ -113,6 +118,27 @@ def test_finish_recording_creates_nested_directories() -> None:
         nested = Path(temp_dir) / "mytests_1" / "test_something.json"
         assert nested.exists()
         assert "Cache file written" in result
+
+
+class TestEnsureRelativeCacheFilename:
+    def test_accepts_nested_relative(self) -> None:
+        # Should not raise.
+        ensure_relative_cache_filename("mytests_1/test_something.json")
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["/tmp/evil.json", "../../foo.json", "a/../../b.json"],
+    )
+    def test_rejects_absolute_and_traversal(self, bad: str) -> None:
+        with pytest.raises(ValueError, match="relative to cache_dir"):
+            ensure_relative_cache_filename(bad)
+
+
+def test_start_recording_rejects_unsafe_filename() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        manager = CacheManager()
+        with pytest.raises(ValueError, match="relative to cache_dir"):
+            manager.start_recording(cache_dir=temp_dir, file_name="../escape.json")
 
 
 def test_update_metadata_on_completion_creates_nested_directories() -> None:

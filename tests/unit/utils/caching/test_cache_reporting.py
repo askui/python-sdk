@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from askui.speaker.cache_executor import CacheExecutor
+from askui.speaker.cache_executor import CacheExecutor, ExecutionResult
 from askui.tools.caching_tools import VerifyCacheExecution
 from askui.utils.caching.cache_manager import CacheManager
 from askui.utils.caching.reporting_utils import (
@@ -91,3 +91,16 @@ def test_verify_failure_reports_reason_and_cache_name() -> None:
         assert "login.json" in reported
         assert "button was missing" in reported
         assert "FAILED" in reported
+
+
+def test_replay_failure_message_handles_missing_error_message() -> None:
+    executor = CacheExecutor()
+    reporter = _CapturingReporter()
+    executor._reporter = reporter  # type: ignore[assignment]
+
+    result = ExecutionResult(status="FAILED", step_index=2, error_message=None)
+    executor._handle_failed(CacheManager(), result)
+
+    reported = " ".join(str(c) for _, c in reporter.messages)
+    assert "unknown error" in reported
+    assert "None" not in reported

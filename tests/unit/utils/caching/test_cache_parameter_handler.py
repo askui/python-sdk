@@ -144,6 +144,19 @@ class TestCandidateCollection:
         # Only the typed free text is a candidate.
         assert candidates == ["hello world"]
 
+    def test_content_capable_keys_are_offered_as_candidates(self) -> None:
+        # id / name / amount can hold user-entered dynamic values, so they are
+        # NOT excluded (only truly structural keys are).
+        trajectory = [
+            ToolUseBlockParam(
+                id="0",
+                name="form_tool",
+                input={"id": "ORDER-12345", "name": "Jane Doe", "amount": "100.00"},
+            )
+        ]
+        candidates = CacheParameterHandler._collect_candidate_values(trajectory)
+        assert candidates == ["ORDER-12345", "Jane Doe", "100.00"]
+
     def test_dedupes_and_skips_short_and_templated_values(self) -> None:
         trajectory = [
             ToolUseBlockParam(id="0", name="t", input={"text": "repeat"}),

@@ -385,7 +385,8 @@ class CacheExecutor(Speaker):
         report_cache_event(
             self._reporter,
             f"Cache replay failed at step {result.step_index}: "
-            f"{result.error_message}. The agent will complete the task manually.",
+            f"{result.error_message or 'unknown error'}. "
+            "The agent will complete the task manually.",
             log=logger,
             level=logging.ERROR,
         )

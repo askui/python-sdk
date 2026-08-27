@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image
@@ -43,6 +43,28 @@ if TYPE_CHECKING:
     from askui.reporting import Reporter
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_relative_cache_filename(filename: str) -> None:
+    """Validate that a cache filename stays within ``cache_dir``.
+
+    The filename may include subdirectories, but must be relative and must not
+    traverse upwards, so it cannot escape ``cache_dir`` (e.g. an absolute path or
+    ``../..`` would otherwise be written/read outside the cache directory).
+
+    Args:
+        filename: The cache filename to validate (may include subdirectories).
+
+    Raises:
+        ValueError: If the filename is absolute or contains a ``..`` component.
+    """
+    pure = PurePath(filename)
+    if pure.is_absolute() or ".." in pure.parts:
+        error_msg = (
+            "Cache filename must be relative to cache_dir and must not contain "
+            f"'..' or be absolute. Got: {filename!r}"
+        )
+        raise ValueError(error_msg)
 
 
 class CacheManager:
@@ -382,6 +404,8 @@ class CacheManager:
         """
         self._recording = True
         self._tool_blocks = []
+        if file_name:
+            ensure_relative_cache_filename(file_name)
         self._cache_dir = Path(cache_dir)
         # `parents=True` so a nested cache_dir (e.g. ".askui_cache/mytests_1")
         # is created. The per-file parent for nested filenames is created at

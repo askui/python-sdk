@@ -32,10 +32,15 @@ CACHE_PARAMETER_NAME_PATTERN = r"[a-zA-Z_][a-zA-Z0-9_]*"
 # key names, counts, ...). Values under these keys are never offered to the LLM
 # as parameter candidates, which removes the bulk of false positives (clicks'
 # coordinates, action names like "left_click", key names, tool names, etc.).
+#
+# Only *structural* keys are listed here. Content-capable keys that a user might
+# legitimately type a dynamic value into (e.g. "id" for a reference/order id,
+# "name" for a username, "amount" for a typed monetary value) are intentionally
+# NOT excluded - they are offered to the LLM, and the conservative system prompt
+# decides whether they are truly run-specific.
 CACHE_INPUT_CONTROL_KEYS = frozenset(
     {
         "action",
-        "amount",
         "button",
         "clicks",
         "coordinate",
@@ -43,10 +48,8 @@ CACHE_INPUT_CONTROL_KEYS = frozenset(
         "count",
         "direction",
         "duration",
-        "id",
         "key",
         "keys",
-        "name",
         "scroll_amount",
         "scroll_direction",
         "start_coordinate",

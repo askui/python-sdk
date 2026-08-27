@@ -78,6 +78,11 @@ class TestResolveTrajectoryPath:
             ".askui_cache", "mytests_1/test_something"
         ) == Path(".askui_cache/mytests_1/test_something.json")
 
+    def test_rejects_filename_escaping_cache_dir(self) -> None:
+        for bad in ("/abs/name", "../escape", "a/../../b"):
+            with pytest.raises(ValueError, match="relative to cache_dir"):
+                Agent._resolve_trajectory_path(".askui_cache", bad)
+
 
 class TestReadTrajectoryIfPresent:
     def test_missing_file_returns_none(self) -> None:

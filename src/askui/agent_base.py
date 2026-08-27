@@ -37,7 +37,10 @@ from askui.tools.caching_tools import (
 from askui.tools.get_tool import GetTool
 from askui.tools.locate_tool import LocateTool
 from askui.utils.annotation_writer import AnnotationWriter
-from askui.utils.caching.cache_manager import CacheManager
+from askui.utils.caching.cache_manager import (
+    CacheManager,
+    ensure_relative_cache_filename,
+)
 from askui.utils.caching.reporting_utils import report_cache_event
 from askui.utils.image_utils import ImageSource
 from askui.utils.source_utils import InputSource, load_image_source, load_source
@@ -492,7 +495,12 @@ class Agent:
 
     @staticmethod
     def _resolve_trajectory_path(cache_dir: str, filename: str) -> Path:
-        """Build the full trajectory path, ensuring a ``.json`` suffix."""
+        """Build the full trajectory path, ensuring a ``.json`` suffix.
+
+        The filename may include subdirectories but must stay within
+        ``cache_dir`` (see `ensure_relative_cache_filename`).
+        """
+        ensure_relative_cache_filename(filename)
         name = filename if filename.endswith(".json") else f"{filename}.json"
         return Path(cache_dir) / name
 
