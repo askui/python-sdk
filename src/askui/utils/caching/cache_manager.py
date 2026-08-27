@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image
@@ -29,6 +29,7 @@ from askui.utils.caching.cache_validator import (
     StepFailureCountValidator,
     TotalFailureRateValidator,
 )
+from askui.utils.caching.reporting_utils import report_cache_event
 from askui.utils.visual_validation import (
     compute_ahash,
     compute_phash,
@@ -39,8 +40,31 @@ from askui.utils.visual_validation import (
 
 if TYPE_CHECKING:
     from askui.model_providers.vlm_provider import VlmProvider
+    from askui.reporting import Reporter
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_relative_cache_filename(filename: str) -> None:
+    """Validate that a cache filename stays within ``cache_dir``.
+
+    The filename may include subdirectories, but must be relative and must not
+    traverse upwards, so it cannot escape ``cache_dir`` (e.g. an absolute path or
+    ``../..`` would otherwise be written/read outside the cache directory).
+
+    Args:
+        filename: The cache filename to validate (may include subdirectories).
+
+    Raises:
+        ValueError: If the filename is absolute or contains a ``..`` component.
+    """
+    pure = PurePath(filename)
+    if pure.is_absolute() or ".." in pure.parts:
+        error_msg = (
+            "Cache filename must be relative to cache_dir and must not contain "
+            f"'..' or be absolute. Got: {filename!r}"
+        )
+        raise ValueError(error_msg)
 
 
 class CacheManager:
@@ -56,13 +80,21 @@ class CacheManager:
     - Updating metadata on disk
     """
 
-    def __init__(self, validators: list[CacheValidator] | None = None) -> None:
+    def __init__(
+        self,
+        validators: list[CacheValidator] | None = None,
+        reporter: "Reporter | None" = None,
+    ) -> None:
         """Initialize cache manager.
 
         Args:
             validators: Optional list of cache validators. If None, uses default
                 validators (StepFailureCount, TotalFailureRate, StaleCache).
+            reporter: Optional reporter used to surface recording/invalidation
+                activity to the user in addition to the logs.
         """
+        self._reporter = reporter
+
         # Validation
         if validators is None:
             # Use default validators
@@ -167,7 +199,14 @@ class CacheManager:
         """
         cache_file.metadata.is_valid = False
         cache_file.metadata.invalidation_reason = reason
-        logger.warning("Cache invalidated: %s", reason)
+        # Concise headline at WARNING; the full (possibly long) reason at INFO.
+        report_cache_event(
+            self._reporter,
+            "Cache invalidated and will not be reused.",
+            log=logger,
+            level=logging.WARNING,
+            detail=f"Invalidation reason: {reason}",
+        )
 
     def mark_cache_valid(self, cache_file: CacheFile) -> None:
         """Mark a cache file as valid.
@@ -258,6 +297,34 @@ class CacheManager:
         except Exception:
             logger.exception("Failed to update cache metadata")
 
+    def mark_execution_unsuccessful(
+        self,
+        cache_file: CacheFile,
+        cache_file_path: str,
+        reason: str,
+    ) -> None:
+        """Record a failed execution attempt, invalidate the cache, and persist.
+
+        Used when the agent explicitly reports (via `verify_cache_execution`)
+        that a replayed trajectory did not achieve the target state, so the cache
+        should not be trusted for future runs.
+
+        Args:
+            cache_file: The cache file to update
+            cache_file_path: Path to write the updated cache file
+            reason: Human-readable reason for invalidation
+        """
+        try:
+            self.record_execution_attempt(cache_file, success=False)
+            self.invalidate_cache(cache_file, reason=reason)
+            self._write_cache_file(cache_file, cache_file_path)
+            logger.info(
+                "Invalidated cache after unsuccessful execution: %s",
+                Path(cache_file_path).name,
+            )
+        except Exception:
+            logger.exception("Failed to invalidate cache metadata")
+
     def _write_cache_file(self, cache_file: CacheFile, cache_file_path: str) -> None:
         """Write cache file to disk.
 
@@ -266,6 +333,7 @@ class CacheManager:
             cache_file_path: Path to write the cache file
         """
         cache_path = Path(cache_file_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_path.open("w", encoding="utf-8") as f:
             json.dump(
                 cache_file.model_dump(mode="json"),
@@ -336,15 +404,20 @@ class CacheManager:
         """
         self._recording = True
         self._tool_blocks = []
+        if file_name:
+            ensure_relative_cache_filename(file_name)
         self._cache_dir = Path(cache_dir)
-        self._cache_dir.mkdir(exist_ok=True)
+        # `parents=True` so a nested cache_dir (e.g. ".askui_cache/mytests_1")
+        # is created. The per-file parent for nested filenames is created at
+        # write time in `_generate_cache_file` / `_write_cache_file`.
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._file_name = (
             file_name
             if file_name.endswith(".json") or not file_name
             else f"{file_name}.json"
         )
         self._goal = goal
-        self._toolbox = toolbox
+        self._toolbox = toolbox or self._toolbox
         self._accumulated_usage = UsageParam()
         self._was_cached_execution = False
         self._cache_writer_settings = cache_writer_settings or CacheWritingSettings()
@@ -377,6 +450,14 @@ class CacheManager:
             self._reset_recording_state()
             return "Skipped writing cache (was cached execution)"
 
+        # Do not write (or overwrite) a cache that has nothing to replay. A
+        # trajectory with no cacheable steps would be a silent no-op "cache hit"
+        # on execute/auto and could clobber a previously good cache.
+        if not self._has_cacheable_steps(self._tool_blocks):
+            logger.info("No cacheable steps recorded; skipping cache write")
+            self._reset_recording_state()
+            return "Skipped writing cache (no cacheable steps)"
+
         # Blank non-cacheable tool inputs BEFORE parameterization
         # (so they don't get sent to LLM for parameter identification)
         if self._toolbox is not None:
@@ -405,6 +486,19 @@ class CacheManager:
         # Generate cache file
         self._generate_cache_file(
             goal_to_save, trajectory_to_save, parameters_dict, cache_file_path
+        )
+
+        if parameters_dict:
+            param_summary = f"{len(parameters_dict)} parameter(s): " + ", ".join(
+                parameters_dict.keys()
+            )
+        else:
+            param_summary = "no parameters"
+        report_cache_event(
+            self._reporter,
+            f"Recorded trajectory to '{cache_file_path.name}' "
+            f"({len(trajectory_to_save)} steps, {param_summary}).",
+            log=logger,
         )
 
         # Reset recording state
@@ -451,6 +545,23 @@ class CacheManager:
             identification_strategy=self._cache_writer_settings.parameter_identification_strategy,
             vlm_provider=self._vlm_provider,
         )
+
+    def _has_cacheable_steps(self, trajectory: list[ToolUseBlockParam]) -> bool:
+        """Whether the trajectory contains at least one cacheable tool step.
+
+        Without a toolbox we cannot tell which tools are cacheable, so we
+        conservatively treat a non-empty trajectory as cacheable.
+        """
+        if not trajectory:
+            return False
+        if self._toolbox is None:
+            return True
+        tools = self._toolbox.tool_map
+        for tool_block in trajectory:
+            tool = tools.get(tool_block.name)
+            if tool is None or tool.is_cacheable:
+                return True
+        return False
 
     def _blank_non_cacheable_tool_inputs(
         self, trajectory: list[ToolUseBlockParam]
@@ -645,7 +756,7 @@ class CacheManager:
 
         cache_file = CacheFile(
             metadata=CacheMetadata(
-                version="0.2",
+                version="0.3",
                 created_at=datetime.now(tz=timezone.utc),
                 goal=goal_to_save,
                 token_usage=self._accumulated_usage,
@@ -655,6 +766,7 @@ class CacheManager:
             cache_parameters=parameters_dict,
         )
 
+        cache_file_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_file_path.open("w", encoding="utf-8") as f:
             json.dump(cache_file.model_dump(mode="json"), f, indent=4)
         logger.info("Cache file successfully written: %s", cache_file_path)

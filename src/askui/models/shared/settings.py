@@ -202,7 +202,7 @@ class CacheMetadata(BaseModel):
         visual_validation: Visual validation configuration
     """
 
-    version: str = "0.2"
+    version: str = "0.3"
     created_at: datetime
     goal: str | None = None
     last_executed_at: datetime | None = None
@@ -234,10 +234,13 @@ class CacheWritingSettings(BaseModel):
     Args:
         filename: Name for the cache file (auto-generated if empty)
         parameter_identification_strategy: How to identify parameters("llm" or "preset")
-        llm_parameter_id_api_provider: API provider for LLM parameter identification
         visual_verification_method: Visual hash method ("phash", "ahash", or "none")
         visual_validation_region_size: Size of region to hash around coordinates
     """
+
+    # Reject unknown fields so a misplaced/misspelled setting raises instead of
+    # being silently ignored.
+    model_config = ConfigDict(extra="forbid")
 
     filename: str = ""
     parameter_identification_strategy: CACHE_PARAMETER_IDENTIFICATION_STRATEGY = "llm"
@@ -253,6 +256,10 @@ class CacheExecutionSettings(BaseModel):
         skip_visual_validation: Override to disable visual validation
         visual_validation_threshold: Max Hamming distance for validation
     """
+
+    # Reject unknown fields so a misplaced/misspelled setting raises instead of
+    # being silently ignored.
+    model_config = ConfigDict(extra="forbid")
 
     delay_time_between_actions: float = 1.0  # keep >1s to give UI time to materialize
     skip_visual_validation: bool = False
@@ -273,11 +280,31 @@ class CachingSettings(BaseModel):
             - "auto": Execute from cache if available, otherwise record
         cache_dir (str): Directory path for storing cache files.
             Default: ".askui_cache".
+        filename (str): Name of the trajectory/cache file for this test case
+            (the ".json" suffix is optional). It is used as the lookup key in
+            "execute"/"auto" modes (the SDK checks whether
+            `<cache_dir>/<filename>` exists and, if so, feeds its details to the
+            agent automatically) and as the target filename in "record"/"auto"
+            modes. If empty, no trajectory is auto-detected and recordings get an
+            auto-generated filename.
         writing_settings: Settings for cache recording (used in "record"/"auto" modes)
         execution_settings: Settings for cache playback (used in "execute"/"auto" modes)
+
+    Note:
+        Playback options such as the delay between replayed actions live on
+        `execution_settings` (a `CacheExecutionSettings`), e.g.
+        `CachingSettings(execution_settings=CacheExecutionSettings(
+        delay_time_between_actions=3.0))`. Unknown top-level fields are rejected
+        so a misplaced option raises instead of being silently ignored.
     """
+
+    # Reject unknown fields so a misplaced/misspelled setting (e.g. passing
+    # delay_time_between_actions here instead of on execution_settings) raises
+    # instead of being silently ignored.
+    model_config = ConfigDict(extra="forbid")
 
     strategy: CACHING_STRATEGY | None = None
     cache_dir: str = ".askui_cache"
+    filename: str = ""
     writing_settings: CacheWritingSettings | None = None
     execution_settings: CacheExecutionSettings | None = None

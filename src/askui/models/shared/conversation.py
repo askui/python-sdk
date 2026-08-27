@@ -236,9 +236,14 @@ class Conversation:
 
     @tracer.start_as_current_span("_teardown_control_loop")
     def _teardown_control_loop(self) -> None:
-        # Finish recording if cache_manager is active and not executing from cache
+        # Finish recording if cache_manager is active and not executing from cache.
+        # This runs in the conversation's `finally`, so any error here must not
+        # mask the real control-loop outcome - log and swallow instead.
         if self.cache_manager is not None and not self._executed_from_cache:
-            self.cache_manager.finish_recording(self.get_messages())
+            try:
+                self.cache_manager.finish_recording(self.get_messages())
+            except Exception:
+                logger.exception("Failed to finish cache recording")
 
     def _setup_speaker_handoff(self) -> None:
         """Set up speaker handoff infrastructure.

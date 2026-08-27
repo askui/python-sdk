@@ -25,6 +25,40 @@ logger = logging.getLogger(__name__)
 # Regex pattern for matching parameters: {{parameter_name}}
 # Allows alphanumeric characters and underscores, must start with letter/underscore
 CACHE_PARAMETER_PATTERN = r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}"
+# Pattern a parameter *name* must fully match to be usable with the {{...}} syntax.
+CACHE_PARAMETER_NAME_PATTERN = r"[a-zA-Z_][a-zA-Z0-9_]*"
+
+# Tool-input keys that never hold user-entered free text (coordinates, enums,
+# key names, counts, ...). Values under these keys are never offered to the LLM
+# as parameter candidates, which removes the bulk of false positives (clicks'
+# coordinates, action names like "left_click", key names, tool names, etc.).
+#
+# Only *structural* keys are listed here. Content-capable keys that a user might
+# legitimately type a dynamic value into (e.g. "id" for a reference/order id,
+# "name" for a username, "amount" for a typed monetary value) are intentionally
+# NOT excluded - they are offered to the LLM, and the conservative system prompt
+# decides whether they are truly run-specific.
+CACHE_INPUT_CONTROL_KEYS = frozenset(
+    {
+        "action",
+        "button",
+        "clicks",
+        "coordinate",
+        "coordinates",
+        "count",
+        "direction",
+        "duration",
+        "key",
+        "keys",
+        "scroll_amount",
+        "scroll_direction",
+        "start_coordinate",
+        "tool",
+        "type",
+        "x",
+        "y",
+    }
+)
 
 
 class CacheParameterDefinition:
@@ -135,23 +169,35 @@ class CacheParameterHandler:
             logger.debug("Empty trajectory provided, skipping parameter identification")
             return {}, []
 
+        # Only user-entered free-text values are eligible to become parameters.
+        # This excludes coordinates, key names, action/enum values and tool
+        # names up front, so the model is never even asked about them.
+        candidate_values = CacheParameterHandler._collect_candidate_values(trajectory)
+        if not candidate_values:
+            logger.info(
+                "No free-text values in trajectory; skipping parameter identification"
+            )
+            return {}, []
+
         logger.info(
-            "Starting parameter identification for trajectory with %s steps",
+            "Evaluating %s candidate value(s) for parameterization "
+            "(trajectory has %s steps)",
+            len(candidate_values),
             len(trajectory),
         )
 
-        # Convert trajectory to serializable format for analysis
-        trajectory_data = [tool.model_dump(mode="json") for tool in trajectory]
-        logger.debug("Converted %s tool blocks to JSON format", len(trajectory_data))
-
-        user_message = (
-            "Analyze this UI automation trajectory and identify all values that "
-            "should be parameters:\n\n"
-            f"```json\n{json.dumps(trajectory_data, indent=2)}\n```\n\n"
-            "Return only the JSON object with identified parameters. "
-            "Be thorough but conservative - only mark values that are clearly "
-            "dynamic or time-sensitive."
+        candidate_list = "\n".join(
+            f"{i}. {value!r}" for i, value in enumerate(candidate_values, 1)
         )
+        user_message = (
+            "The following text values were entered during the recording. For "
+            "each, decide whether it MUST be supplied fresh on every run (see the "
+            "instructions). Only choose values from this list, verbatim; when in "
+            "doubt, leave a value out.\n\n"
+            f"Candidate values:\n{candidate_list}\n\n"
+            "Return only the JSON object with the parameters that qualify."
+        )
+        allowed_values = set(candidate_values)
 
         response_text = ""  # Initialize for error logging
         try:
@@ -168,44 +214,23 @@ class CacheParameterHandler:
             )
             logger.debug("Received response from LLM")
 
-            # Extract text from response
-            if isinstance(response.content, list):
-                response_text = next(
-                    (
-                        block.text
-                        for block in response.content
-                        if hasattr(block, "text")
-                    ),
-                    "",
-                )
-            else:
-                response_text = str(response.content)
-
-            # Parse the JSON response
+            response_text = CacheParameterHandler._extract_response_text(response)
             logger.debug("Parsing LLM response to extract parameter definitions")
-            # Handle markdown code blocks if present
-            if "```json" in response_text:
-                logger.debug("Removing JSON markdown code block wrapper from response")
-                response_text = (
-                    response_text.split("```json")[1].split("```")[0].strip()
-                )
-            elif "```" in response_text:
-                logger.debug("Removing code block wrapper from response")
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-
-            parameter_data = json.loads(response_text)
+            parameter_data = json.loads(
+                CacheParameterHandler._strip_json_code_fence(response_text)
+            )
             logger.debug(
                 "Successfully parsed JSON response with %s parameters",
                 len(parameter_data.get("parameters", [])),
             )
 
-            # Convert to our data structures
-            parameter_definitions = [
-                CacheParameterDefinition(
-                    name=p["name"], value=p["value"], description=p["description"]
-                )
-                for p in parameter_data.get("parameters", [])
-            ]
+            # Convert to our data structures, dropping entries that would corrupt
+            # the trajectory (invalid names / empty values) or that the model
+            # invented (values not among the offered candidates).
+            parameter_definitions = CacheParameterHandler._build_parameter_definitions(
+                parameter_data.get("parameters", []),
+                allowed_values=allowed_values,
+            )
 
             parameters_dict = {p.name: p.description for p in parameter_definitions}
 
@@ -240,6 +265,128 @@ class CacheParameterHandler:
             return {}, []
         else:
             return parameters_dict, parameter_definitions
+
+    @staticmethod
+    def _extract_response_text(response: Any) -> str:
+        """Extract the text payload from a VLM response message."""
+        if isinstance(response.content, list):
+            return next(
+                (block.text for block in response.content if hasattr(block, "text")),
+                "",
+            )
+        return str(response.content)
+
+    @staticmethod
+    def _strip_json_code_fence(response_text: str) -> str:
+        """Strip a ```json ...``` (or ``` ...```) fence around the JSON payload."""
+        if "```json" in response_text:
+            return response_text.split("```json")[1].split("```")[0].strip()
+        if "```" in response_text:
+            return response_text.split("```")[1].split("```")[0].strip()
+        return response_text
+
+    @staticmethod
+    def _build_parameter_definitions(
+        raw_parameters: Any,
+        allowed_values: set[str] | None = None,
+    ) -> list[CacheParameterDefinition]:
+        """Validate LLM-identified parameters, dropping corrupting entries.
+
+        Drops parameters whose name is not a valid `{{param}}` identifier (they
+        would never be detected by `extract_parameters`, so validation would
+        wrongly pass and substitution would never happen), parameters with an
+        empty value (an empty replacement key matches everywhere and would shred
+        every string in the trajectory), and - when `allowed_values` is given -
+        parameters whose value was not one of the candidate values offered to the
+        model (i.e. hallucinated or reformatted values that would not match).
+        """
+        definitions: list[CacheParameterDefinition] = []
+        if not isinstance(raw_parameters, list):
+            return definitions
+        for p in raw_parameters:
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name")
+            value = p.get("value")
+            if not isinstance(name, str) or not re.fullmatch(
+                CACHE_PARAMETER_NAME_PATTERN, name
+            ):
+                logger.warning(
+                    "Skipping identified parameter with invalid name: %r", name
+                )
+                continue
+            if value is None or not str(value).strip():
+                logger.warning(
+                    "Skipping identified parameter %r with empty value", name
+                )
+                continue
+            if allowed_values is not None and str(value) not in allowed_values:
+                logger.warning(
+                    "Skipping identified parameter %r: value %r was not a candidate",
+                    name,
+                    value,
+                )
+                continue
+            definitions.append(
+                CacheParameterDefinition(
+                    name=name,
+                    value=value,
+                    description=str(p.get("description", "")),
+                )
+            )
+        return definitions
+
+    @staticmethod
+    def _collect_candidate_values(
+        trajectory: list[ToolUseBlockParam],
+    ) -> list[str]:
+        """Collect user-entered free-text values eligible for parameterization.
+
+        Walks each tool input and collects string leaf values, skipping values
+        under control keys (see `CACHE_INPUT_CONTROL_KEYS`) such as coordinates,
+        key names, action/enum values and counts. Values are de-duplicated while
+        preserving first-seen order. This is the set of values the model is
+        allowed to choose from.
+        """
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for block in trajectory:
+            CacheParameterHandler._collect_from_input(
+                block.input, candidates, seen, key_allowed=True
+            )
+        return candidates
+
+    @staticmethod
+    def _collect_from_input(
+        value: Any,
+        candidates: list[str],
+        seen: set[str],
+        key_allowed: bool,
+    ) -> None:
+        """Recursively gather candidate strings from a tool input value."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if (
+                key_allowed
+                and len(stripped) >= 2
+                and "{{" not in value
+                and value not in seen
+            ):
+                seen.add(value)
+                candidates.append(value)
+        elif isinstance(value, dict):
+            for key, sub_value in value.items():
+                sub_allowed = (
+                    key_allowed and str(key).lower() not in CACHE_INPUT_CONTROL_KEYS
+                )
+                CacheParameterHandler._collect_from_input(
+                    sub_value, candidates, seen, sub_allowed
+                )
+        elif isinstance(value, list):
+            for item in value:
+                CacheParameterHandler._collect_from_input(
+                    item, candidates, seen, key_allowed
+                )
 
     @staticmethod
     def _replace_values_with_parameters(

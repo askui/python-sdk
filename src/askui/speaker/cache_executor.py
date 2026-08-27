@@ -17,6 +17,7 @@ from askui.models.shared.agent_message_param import (
 from askui.models.shared.settings import CacheExecutionSettings
 from askui.utils.caching.cache_manager import CacheManager
 from askui.utils.caching.cache_parameter_handler import CacheParameterHandler
+from askui.utils.caching.reporting_utils import report_cache_event
 from askui.utils.visual_validation import (
     compute_ahash,
     compute_hamming_distance,
@@ -126,6 +127,19 @@ class CacheExecutor(Speaker):
         # Activation context received via on_activate()
         self._activation_context: dict[str, Any] = {}
 
+        # Reporter for surfacing replay progress (set on activation).
+        self._reporter: "Reporter | None" = None
+
+    @property
+    def current_cache_file(self) -> "CacheFile | None":
+        """The cache file of the most recently activated trajectory, if any."""
+        return self._cache_file
+
+    @property
+    def current_cache_file_path(self) -> str | None:
+        """Path of the most recently activated trajectory, if any."""
+        return self._cache_file_path
+
     @override
     def can_handle(self, conversation: "Conversation") -> bool:  # noqa: ARG002
         """Check if cache execution is active or should be activated.
@@ -206,9 +220,11 @@ class CacheExecutor(Speaker):
                 if self._current_step_index < len(self._trajectory):
                     time.sleep(self._delay_time_between_actions)
 
-        # Check if we have a trajectory
-        if not self._trajectory or not self._toolbox:
-            logger.error("Cache executor called but no trajectory or toolbox available")
+        # Require a toolbox to execute. An empty trajectory is allowed: it flows
+        # into `_get_next_step()`'s COMPLETED path (which requests verification)
+        # rather than silently bouncing back to the agent.
+        if self._toolbox is None:
+            logger.error("Cache executor called but no toolbox available")
             return SpeakerResult(
                 status="switch_speaker",
                 next_speaker="AgentSpeaker",
@@ -266,16 +282,36 @@ class CacheExecutor(Speaker):
 
     def _handle_needs_agent(self, result: ExecutionResult) -> SpeakerResult:
         """Handle cache execution pausing for non-cacheable tool."""
-        logger.info(
-            "Paused cache execution at step %d "
-            "(non-cacheable tool - agent will handle this step)",
-            result.step_index,
+        tool_name = getattr(result.tool_result, "name", "unknown")
+        report_cache_event(
+            self._reporter,
+            f"Paused replay at step {result.step_index}: the '{tool_name}' tool "
+            "cannot be replayed from cache; the agent will perform this step.",
+            log=logger,
         )
         self._executing_from_cache = False
 
         tool_to_execute = result.tool_result
 
         if tool_to_execute:
+            resume_index = result.step_index + 1
+            more_steps_remain = self._has_executable_steps_from(resume_index)
+
+            if more_steps_remain:
+                resume_instruction = (
+                    "Execute this tool with the necessary parameters. To replay the "
+                    "remaining cached steps afterwards, switch back to the "
+                    "CacheExecutor with "
+                    f"start_from_step_index={resume_index}."
+                )
+            else:
+                resume_instruction = (
+                    "This is the FINAL step of the trajectory. Execute this tool "
+                    "with the necessary parameters, then verify the outcome with the "
+                    "verify_cache_execution tool. Do NOT switch back to the "
+                    "CacheExecutor - there are no further cached steps to replay."
+                )
+
             instruction_message = MessageParam(
                 role="user",
                 content=[
@@ -286,8 +322,7 @@ class CacheExecutor(Speaker):
                             "The previous steps were executed successfully "
                             f"from cache. The next step requires the "
                             f"'{tool_to_execute.name}' tool, which cannot be "
-                            "executed from cache. Please execute this tool with "
-                            "the necessary parameters."
+                            f"executed from cache. {resume_instruction}"
                         ),
                     )
                 ],
@@ -309,8 +344,11 @@ class CacheExecutor(Speaker):
         result: ExecutionResult,  # noqa: ARG002
     ) -> SpeakerResult:
         """Handle cache execution completion."""
-        logger.info(
-            "Cache trajectory execution completed - requesting agent verification"
+        report_cache_event(
+            self._reporter,
+            f"Finished replaying {len(self._trajectory)} cached step(s); "
+            "asking the agent to verify the result.",
+            log=logger,
         )
         self._executing_from_cache = False
         self._cache_verification_pending = True
@@ -344,10 +382,13 @@ class CacheExecutor(Speaker):
         self, cache_manager: CacheManager, result: ExecutionResult
     ) -> SpeakerResult:
         """Handle cache execution failure."""
-        logger.error(
-            "Cache execution failed at step %d: %s",
-            result.step_index,
-            result.error_message,
+        report_cache_event(
+            self._reporter,
+            f"Cache replay failed at step {result.step_index}: "
+            f"{result.error_message or 'unknown error'}. "
+            "The agent will complete the task manually.",
+            log=logger,
+            level=logging.ERROR,
         )
         self._executing_from_cache = False
 
@@ -415,14 +456,20 @@ class CacheExecutor(Speaker):
             if not self._cache_file:
                 self._cache_file = cache_manager.read_cache_file(Path(trajectory_file))
 
-        # Validate step index
-        if start_from_step_index < 0 or start_from_step_index >= len(
-            self._cache_file.trajectory
-        ):
+        # Validate step index. `start_from_step_index == len(trajectory)` is
+        # allowed and means "there is nothing left to replay" - this happens when
+        # the agent resumes after handling the trajectory's last step (e.g. a
+        # non-cacheable final step). It is treated as an immediate completion by
+        # `_get_next_step()` instead of being rejected as out of range.
+        trajectory_len = len(self._cache_file.trajectory)
+        if start_from_step_index < 0 or start_from_step_index > trajectory_len:
+            valid_range = (
+                f"0-{trajectory_len}" if trajectory_len > 0 else "0 (empty trajectory)"
+            )
             error_msg = (
                 f"Invalid start_from_step_index: {start_from_step_index}. "
-                f"Trajectory has {len(self._cache_file.trajectory)} steps "
-                f"(valid indices: 0-{len(self._cache_file.trajectory) - 1})."
+                f"Trajectory has {trajectory_len} steps "
+                f"(valid indices: {valid_range})."
             )
             raise ValueError(error_msg)
 
@@ -475,15 +522,22 @@ class CacheExecutor(Speaker):
             self._visual_validation_enabled = False
             logger.debug("Visual validation disabled or not configured")
 
-        logger.info(
-            "Cache execution activated: %s (%d steps, starting from step %d)",
-            Path(trajectory_file).name,
-            len(self._cache_file.trajectory),
-            start_from_step_index,
+        # Reporter for surfacing replay progress/outcomes to the user.
+        reporter: Reporter | None = context.get("reporter")
+        self._reporter = reporter
+
+        step_count = len(self._cache_file.trajectory)
+        from_suffix = (
+            "" if start_from_step_index == 0 else f" from step {start_from_step_index}"
+        )
+        report_cache_event(
+            self._reporter,
+            f"Replaying cached trajectory '{Path(trajectory_file).name}' "
+            f"({step_count} steps){from_suffix}.",
+            log=logger,
         )
 
         # Report cache execution statistics to the reporter
-        reporter: Reporter | None = context.get("reporter")
         if reporter and self._cache_file.metadata.token_usage:
             reporter.add_cache_execution_statistics(
                 self._cache_file.metadata.token_usage.model_dump()
@@ -501,6 +555,7 @@ class CacheExecutor(Speaker):
         self._current_step_index = 0
         self._message_history = []
         self._activation_context = {}
+        self._reporter = None
 
     def _get_next_step(
         self, conversation_messages: list[MessageParam] | None = None
@@ -520,7 +575,7 @@ class CacheExecutor(Speaker):
         if self._current_step_index >= len(self._trajectory):
             return ExecutionResult(
                 status="COMPLETED",
-                step_index=self._current_step_index - 1,
+                step_index=max(self._current_step_index - 1, 0),
                 message_history=self._message_history,
             )
 
@@ -582,6 +637,20 @@ class CacheExecutor(Speaker):
             step_index=step_index,
             tool_result=None,
             message_history=[assistant_message],
+        )
+
+    def _has_executable_steps_from(self, index: int) -> bool:
+        """Return whether any step at or after `index` would still be replayed.
+
+        Skippable steps (e.g. `switch_speaker`, verbosity tools) are ignored.
+        Non-cacheable steps count as executable because resuming would replay up
+        to them and pause again. Used to decide whether the agent should resume
+        cache execution after handling a non-cacheable step, or whether that step
+        was the trajectory's last and no resume is needed.
+        """
+        return any(
+            not self._should_skip_step(self._trajectory[i])
+            for i in range(index, len(self._trajectory))
         )
 
     def _should_pause_for_agent(self, step: ToolUseBlockParam) -> bool:

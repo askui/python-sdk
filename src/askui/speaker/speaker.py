@@ -127,6 +127,16 @@ class Speakers:
         """Add a speaker to the collection."""
         self.speakers[speaker.name] = speaker
 
+    def remove_speaker(self, name: str) -> None:
+        """Remove a speaker by name if present (the default speaker is kept).
+
+        Used to avoid a speaker registered for one ``act()`` call (e.g. a
+        ``CacheExecutor``) leaking into subsequent calls that do not need it.
+        """
+        if name == self.default_speaker:
+            return
+        self.speakers.pop(name, None)
+
     def get_names(self) -> list[str]:
         """Get list of all speaker names."""
         return list(self.speakers.keys())

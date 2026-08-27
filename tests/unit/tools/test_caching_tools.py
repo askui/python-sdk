@@ -2,22 +2,23 @@
 
 import json
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
+from askui.models.shared.settings import CacheFile, CacheMetadata
+from askui.speaker.cache_executor import CacheExecutor
 from askui.tools.caching_tools import (
     InspectCacheMetadata,
-    RetrieveCachedTestExecutions,
     VerifyCacheExecution,
 )
+from askui.utils.caching.cache_manager import CacheManager
 
 
-def _create_valid_cache_file(path: Path, is_valid: bool = True) -> None:
+def _write_cache_file(path: Path, is_valid: bool = True) -> None:
     """Create a valid cache file with required metadata structure."""
     cache_data = {
         "metadata": {
-            "version": "1.0",
+            "version": "0.3",
             "created_at": "2025-01-01T00:00:00Z",
             "is_valid": is_valid,
             "execution_attempts": 0,
@@ -29,130 +30,12 @@ def _create_valid_cache_file(path: Path, is_valid: bool = True) -> None:
     path.write_text(json.dumps(cache_data), encoding="utf-8")
 
 
-def test_retrieve_cached_test_executions_lists_json_files() -> None:
-    """Test that RetrieveCachedTestExecutions lists all JSON files in cache dir."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        cache_dir = Path(temp_dir)
-
-        # Create valid cache files
-        _create_valid_cache_file(cache_dir / "cache1.json")
-        _create_valid_cache_file(cache_dir / "cache2.json")
-        (cache_dir / "not_cache.txt").write_text("text", encoding="utf-8")
-
-        tool = RetrieveCachedTestExecutions(cache_dir=str(cache_dir))
-        result = tool()
-
-        assert len(result) == 2
-        assert any("cache1.json" in path for path in result)
-        assert any("cache2.json" in path for path in result)
-        assert not any("not_cache.txt" in path for path in result)
-
-
-def test_retrieve_cached_test_executions_returns_empty_list_when_no_files() -> None:
-    """Test that RetrieveCachedTestExecutions returns empty list when no files exist."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        cache_dir = Path(temp_dir)
-
-        tool = RetrieveCachedTestExecutions(cache_dir=str(cache_dir))
-        result = tool()
-
-        assert result == []
-
-
-def test_retrieve_cached_test_executions_raises_error_when_dir_not_found() -> None:
-    """Test that RetrieveCachedTestExecutions raises error if directory doesn't exist"""
-    tool = RetrieveCachedTestExecutions(cache_dir="/non/existent/directory")
-
-    with pytest.raises(FileNotFoundError, match="Trajectories directory not found"):
-        tool()
-
-
-def test_retrieve_cached_test_executions_respects_custom_format() -> None:
-    """Test that RetrieveCachedTestExecutions respects custom file format."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        cache_dir = Path(temp_dir)
-
-        # Create files with different extensions
-        _create_valid_cache_file(cache_dir / "cache1.json")
-        _create_valid_cache_file(cache_dir / "cache2.traj")
-
-        # Default format (.json)
-        tool_json = RetrieveCachedTestExecutions(
-            cache_dir=str(cache_dir), trajectories_format=".json"
-        )
-        result_json = tool_json()
-        assert len(result_json) == 1
-        assert "cache1.json" in result_json[0]
-
-        # Custom format (.traj)
-        tool_traj = RetrieveCachedTestExecutions(
-            cache_dir=str(cache_dir), trajectories_format=".traj"
-        )
-        result_traj = tool_traj()
-        assert len(result_traj) == 1
-        assert "cache2.traj" in result_traj[0]
-
-
-def test_retrieve_cached_test_executions_filters_invalid_by_default() -> None:
-    """Test that invalid caches are filtered out by default."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        cache_dir = Path(temp_dir)
-
-        # Create valid and invalid cache files
-        _create_valid_cache_file(cache_dir / "valid.json", is_valid=True)
-        _create_valid_cache_file(cache_dir / "invalid.json", is_valid=False)
-
-        tool = RetrieveCachedTestExecutions(cache_dir=str(cache_dir))
-        result = tool(include_invalid=False)
-
-        assert len(result) == 1
-        assert any("valid.json" in path for path in result)
-        assert not any("invalid.json" in path for path in result)
-
-
-def test_retrieve_cached_test_executions_includes_invalid_when_requested() -> None:
-    """Test that invalid caches are included when include_invalid=True."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        cache_dir = Path(temp_dir)
-
-        # Create valid and invalid cache files
-        _create_valid_cache_file(cache_dir / "valid.json", is_valid=True)
-        _create_valid_cache_file(cache_dir / "invalid.json", is_valid=False)
-
-        tool = RetrieveCachedTestExecutions(cache_dir=str(cache_dir))
-        result = tool(include_invalid=True)
-
-        assert len(result) == 2
-        assert any("valid.json" in path for path in result)
-        assert any("invalid.json" in path for path in result)
-
-
-def test_retrieve_cached_test_executions_returns_parameter_info() -> None:
-    """Test that cache parameter info is included in the result."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        cache_dir = Path(temp_dir)
-
-        # Create cache file with parameters
-        cache_data = {
-            "metadata": {
-                "version": "1.0",
-                "created_at": "2025-01-01T00:00:00Z",
-                "is_valid": True,
-                "execution_attempts": 0,
-                "failures": [],
-            },
-            "trajectory": [],
-            "cache_parameters": {"target_url": "placeholder", "user_id": "123"},
-        }
-        cache_file = cache_dir / "with_params.json"
-        cache_file.write_text(json.dumps(cache_data), encoding="utf-8")
-
-        tool = RetrieveCachedTestExecutions(cache_dir=str(cache_dir))
-        result = tool()
-
-        assert len(result) == 1
-        assert "parameters:" in result[0]
-        assert "target_url" in result[0]
+def _activated_cache_executor(cache_file_path: Path) -> CacheExecutor:
+    """Return a CacheExecutor with an activated (loaded) cache file."""
+    executor = CacheExecutor()
+    executor._cache_file = CacheManager.read_cache_file(cache_file_path)
+    executor._cache_file_path = str(cache_file_path)
+    return executor
 
 
 def test_verify_cache_execution_initializes_correctly() -> None:
@@ -182,6 +65,50 @@ def test_verify_cache_execution_reports_failure() -> None:
     assert "Button was not clicked" in result
 
 
+def test_verify_cache_execution_success_updates_metadata() -> None:
+    """A successful verification records the execution attempt on disk."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cache_path = Path(temp_dir) / "trajectory.json"
+        _write_cache_file(cache_path, is_valid=True)
+
+        executor = _activated_cache_executor(cache_path)
+        tool = VerifyCacheExecution(
+            cache_executor=executor, cache_manager=CacheManager()
+        )
+        tool(success=True, verification_notes="all good")
+
+        persisted = CacheManager.read_cache_file(cache_path)
+        assert persisted.metadata.is_valid is True
+        assert persisted.metadata.execution_attempts == 1
+        assert persisted.metadata.last_executed_at is not None
+
+
+def test_verify_cache_execution_failure_invalidates_cache() -> None:
+    """An unsuccessful verification invalidates the cache on disk."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        cache_path = Path(temp_dir) / "trajectory.json"
+        _write_cache_file(cache_path, is_valid=True)
+
+        executor = _activated_cache_executor(cache_path)
+        tool = VerifyCacheExecution(
+            cache_executor=executor, cache_manager=CacheManager()
+        )
+        tool(success=False, verification_notes="needed manual corrections")
+
+        persisted = CacheManager.read_cache_file(cache_path)
+        assert persisted.metadata.is_valid is False
+        assert persisted.metadata.invalidation_reason is not None
+        assert "needed manual corrections" in persisted.metadata.invalidation_reason
+
+
+def test_verify_cache_execution_without_wiring_is_noop() -> None:
+    """Without a wired executor/manager the tool only reports (no crash)."""
+    tool = VerifyCacheExecution()
+    # Should not raise even though there is nothing to persist.
+    result = tool(success=False, verification_notes="no active execution")
+    assert "success=False" in result
+
+
 def test_inspect_cache_metadata_initializes_correctly() -> None:
     """Test that InspectCacheMetadata initializes correctly."""
     tool = InspectCacheMetadata()
@@ -204,7 +131,7 @@ def test_inspect_cache_metadata_returns_metadata() -> None:
         cache_file = Path(temp_dir) / "test_cache.json"
         cache_data = {
             "metadata": {
-                "version": "1.0",
+                "version": "0.3",
                 "created_at": "2025-01-01T00:00:00Z",
                 "is_valid": True,
                 "execution_attempts": 5,
@@ -221,8 +148,19 @@ def test_inspect_cache_metadata_returns_metadata() -> None:
         result = tool(trajectory_file=str(cache_file))
 
         assert "=== Cache Metadata ===" in result
-        assert "Version: 1.0" in result
+        assert "Version: 0.3" in result
         assert "Is Valid: True" in result
         assert "Total Execution Attempts: 5" in result
         assert "Total Steps: 1" in result
         assert "url" in result
+
+
+def test_cache_manager_generates_version_0_3() -> None:
+    """New cache files are written with the current 0.3 metadata version."""
+    assert CacheMetadata(created_at=datetime.now(tz=timezone.utc)).version == "0.3"
+    # Sanity: CacheFile round-trips with the new version.
+    cache_file = CacheFile(
+        metadata=CacheMetadata(created_at=datetime.now(tz=timezone.utc)),
+        trajectory=[],
+    )
+    assert cache_file.metadata.version == "0.3"
