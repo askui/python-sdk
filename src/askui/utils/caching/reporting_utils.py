@@ -24,18 +24,26 @@ def report_cache_event(
     *,
     log: logging.Logger,
     level: int = logging.INFO,
+    detail: str | None = None,
 ) -> None:
     """Emit a caching event to the logger and (if present) the reporter.
 
     Args:
         reporter: The reporter to forward the message to, or ``None``.
-        message: Human-readable description of what/why the cache is doing.
+        message: Concise headline of what/why the cache is doing.
         log: The module logger to write to.
-        level: Logging level for the log record (default ``logging.INFO``).
+        level: Logging level for the headline record (default ``logging.INFO``).
+        detail: Optional longer description. It is always logged at ``INFO`` so a
+            verbose reason does not bloat a higher-level (e.g. WARNING) headline,
+            and it is appended to the reporter message so the full context is
+            still surfaced there.
     """
     log.log(level, message)
+    if detail:
+        log.info(detail)
     if reporter is not None:
+        reporter_message = message if not detail else f"{message} {detail}"
         try:
-            reporter.add_message(CACHE_REPORTER_SOURCE, message)
+            reporter.add_message(CACHE_REPORTER_SOURCE, reporter_message)
         except Exception:  # noqa: BLE001 - reporting must never break caching
             log.debug("Failed to forward cache event to reporter", exc_info=True)

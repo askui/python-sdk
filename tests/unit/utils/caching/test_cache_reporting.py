@@ -41,6 +41,26 @@ def test_report_cache_event_without_reporter_only_logs(caplog: Any) -> None:
     assert any("no reporter here" in rec.message for rec in caplog.records)
 
 
+def test_report_cache_event_detail_headline_warning_reason_info(caplog: Any) -> None:
+    reporter = _CapturingReporter()
+    with caplog.at_level(logging.INFO):
+        report_cache_event(
+            reporter,  # type: ignore[arg-type]
+            "Cache invalidated and will not be reused.",
+            log=logger,
+            level=logging.WARNING,
+            detail="Invalidation reason: something very long",
+        )
+    # Headline is a WARNING; the full reason is an INFO record.
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    infos = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("Cache invalidated" in r.message for r in warnings)
+    assert any("something very long" in r.message for r in infos)
+    # The reporter receives the combined message.
+    assert "something very long" in reporter.messages[0][1]
+    assert "Cache invalidated" in reporter.messages[0][1]
+
+
 def _write_valid_cache(path: Path) -> None:
     path.write_text(
         '{"metadata": {"version": "0.3", "created_at": "2025-01-01T00:00:00Z", '

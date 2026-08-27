@@ -177,11 +177,13 @@ class CacheManager:
         """
         cache_file.metadata.is_valid = False
         cache_file.metadata.invalidation_reason = reason
+        # Concise headline at WARNING; the full (possibly long) reason at INFO.
         report_cache_event(
             self._reporter,
-            f"Cache invalidated and will not be reused: {reason}",
+            "Cache invalidated and will not be reused.",
             log=logger,
             level=logging.WARNING,
+            detail=f"Invalidation reason: {reason}",
         )
 
     def mark_cache_valid(self, cache_file: CacheFile) -> None:
