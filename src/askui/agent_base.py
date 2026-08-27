@@ -38,6 +38,7 @@ from askui.tools.get_tool import GetTool
 from askui.tools.locate_tool import LocateTool
 from askui.utils.annotation_writer import AnnotationWriter
 from askui.utils.caching.cache_manager import CacheManager
+from askui.utils.caching.reporting_utils import report_cache_event
 from askui.utils.image_utils import ImageSource
 from askui.utils.source_utils import InputSource, load_image_source, load_source
 
@@ -388,7 +389,7 @@ class Agent:
         )
 
         if execute_trajectory or should_record:
-            cache_manager = CacheManager()
+            cache_manager = CacheManager(reporter=self._reporter)
 
         # Setup execute mode: wire the CacheExecutor and verification tooling and
         # tell the agent (via the hint) exactly which trajectory to replay.
@@ -407,6 +408,7 @@ class Agent:
                     VerifyCacheExecution(
                         cache_executor=cache_executor,
                         cache_manager=cache_manager,
+                        reporter=self._reporter,
                     ),
                     InspectCacheMetadata(),
                 ]
@@ -415,10 +417,19 @@ class Agent:
                 settings.messages.system = create_default_prompt()
             settings.messages.system.cache_use = CACHE_USE_PROMPT
             cache_hint = self._build_cache_execution_hint(trajectory_path, cache_file)
-        elif strategy == "auto":
-            # Auto mode with nothing usable to replay: let the agent know a new
-            # trajectory is being recorded for next time.
-            cache_hint = self._build_no_cache_hint()
+
+            validity = (
+                "valid" if cache_file.metadata.is_valid else "INVALID (will try anyway)"
+            )
+            report_cache_event(
+                self._reporter,
+                f"Cache hit: replaying '{trajectory_path.name}' "
+                f"({len(cache_file.trajectory)} steps, "
+                f"{len(cache_file.cache_parameters)} parameter(s), {validity}).",
+                log=logger,
+            )
+        else:
+            cache_hint = self._report_cache_miss(strategy, filename)
 
         # Add caching tools to the tools list
         if isinstance(tools, list):
@@ -442,6 +453,30 @@ class Agent:
             )
 
         return tools, cache_manager, cache_hint
+
+    def _report_cache_miss(self, strategy: str | None, filename: str) -> str | None:
+        """Report that no usable trajectory was found and return the miss hint.
+
+        Returns the "no cached trajectory" hint in auto mode (so the agent knows
+        it is recording for next time) and ``None`` otherwise.
+        """
+        if strategy == "auto":
+            if filename:
+                report_cache_event(
+                    self._reporter,
+                    f"No usable cached trajectory for '{filename}'; running "
+                    "normally and recording this run for next time.",
+                    log=logger,
+                )
+            return self._build_no_cache_hint()
+        if strategy == "execute" and filename:
+            report_cache_event(
+                self._reporter,
+                f"No usable cached trajectory for '{filename}'; running normally "
+                "(execute mode does not record).",
+                log=logger,
+            )
+        return None
 
     @staticmethod
     def _resolve_cache_filename(caching_settings: CachingSettings) -> str:

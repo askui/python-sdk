@@ -29,6 +29,7 @@ from askui.utils.caching.cache_validator import (
     StepFailureCountValidator,
     TotalFailureRateValidator,
 )
+from askui.utils.caching.reporting_utils import report_cache_event
 from askui.utils.visual_validation import (
     compute_ahash,
     compute_phash,
@@ -39,6 +40,7 @@ from askui.utils.visual_validation import (
 
 if TYPE_CHECKING:
     from askui.model_providers.vlm_provider import VlmProvider
+    from askui.reporting import Reporter
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +58,21 @@ class CacheManager:
     - Updating metadata on disk
     """
 
-    def __init__(self, validators: list[CacheValidator] | None = None) -> None:
+    def __init__(
+        self,
+        validators: list[CacheValidator] | None = None,
+        reporter: "Reporter | None" = None,
+    ) -> None:
         """Initialize cache manager.
 
         Args:
             validators: Optional list of cache validators. If None, uses default
                 validators (StepFailureCount, TotalFailureRate, StaleCache).
+            reporter: Optional reporter used to surface recording/invalidation
+                activity to the user in addition to the logs.
         """
+        self._reporter = reporter
+
         # Validation
         if validators is None:
             # Use default validators
@@ -167,7 +177,12 @@ class CacheManager:
         """
         cache_file.metadata.is_valid = False
         cache_file.metadata.invalidation_reason = reason
-        logger.warning("Cache invalidated: %s", reason)
+        report_cache_event(
+            self._reporter,
+            f"Cache invalidated and will not be reused: {reason}",
+            log=logger,
+            level=logging.WARNING,
+        )
 
     def mark_cache_valid(self, cache_file: CacheFile) -> None:
         """Mark a cache file as valid.
@@ -441,6 +456,19 @@ class CacheManager:
         # Generate cache file
         self._generate_cache_file(
             goal_to_save, trajectory_to_save, parameters_dict, cache_file_path
+        )
+
+        if parameters_dict:
+            param_summary = f"{len(parameters_dict)} parameter(s): " + ", ".join(
+                parameters_dict.keys()
+            )
+        else:
+            param_summary = "no parameters"
+        report_cache_event(
+            self._reporter,
+            f"Recorded trajectory to '{cache_file_path.name}' "
+            f"({len(trajectory_to_save)} steps, {param_summary}).",
+            log=logger,
         )
 
         # Reset recording state

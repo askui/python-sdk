@@ -59,6 +59,18 @@ writing_settings = CacheWritingSettings(
 #### Parameters
 
 - **`filename`**: Name of the cache file to write. Prefer setting `filename` directly on `CachingSettings` (the top-level `filename` takes precedence and is also used for trajectory lookup in `execute`/`auto` modes). If neither is specified, a timestamped filename will be generated automatically (format: `cached_trajectory_YYYYMMDDHHMMSSffffff.json`).
+- **`parameter_identification_strategy`**: How dynamic values are turned into `{{parameters}}` when recording (`"llm"`, the default, or `"preset"`). See [Dynamic Parameters](#dynamic-parameters).
+
+### Dynamic Parameters
+
+While recording, some entered values (e.g. today's date, a one-time code) must be supplied fresh on each replay rather than replayed literally. These are turned into `{{parameter}}` placeholders and requested from the agent on execution.
+
+With the default `"llm"` strategy, identification is deliberately **conservative and precision-first**:
+- Only user-entered **free text** is considered (values typed into fields). Coordinates, key names, action/enum values, counts and tool names are never eligible, so they are never mis-parameterized.
+- The model is instructed to parameterize a value **only** when replaying the recorded literal would clearly be wrong on a later run (dates relative to "now", generated IDs/tokens/OTPs, intentionally per-run identities). When in doubt, the value is left as a literal — recording zero parameters is normal and expected.
+- Identified values are validated against the recorded candidates, so hallucinated or reformatted values are dropped.
+
+If a value you expected to be parameterized was left literal (or vice-versa), the caching logs/report show what was recorded (see [Observability](#observability)); you can also switch to `"preset"` and template values yourself with the `{{name}}` syntax.
 
 ### Execution Settings
 
@@ -240,6 +252,23 @@ In read mode:
 6. The agent is instructed to verify results after replay (via `verify_cache_execution`) and make corrections if needed; reporting failure invalidates the cache
 
 The delay between actions can be customized using `CacheExecutionSettings` to accommodate different application response times.
+
+## Observability
+
+Caching explains what it is doing and why, via both standard logs and the
+attached reporter(s) (so the information also appears in e.g. the HTML report,
+not only on stderr). Reporter messages use the source/role `Cache`. You will see
+events such as:
+
+- **Cache hit**: `Cache hit: replaying 'login.json' (12 steps, 1 parameter(s), valid).`
+- **Cache miss**: `No usable cached trajectory for 'login.json'; running normally and recording this run for next time.`
+- **Pause on a non-cacheable step**: `Paused replay at step 4: the 'get_file_tool' tool cannot be replayed from cache; the agent will perform this step.`
+- **Completion**: `Finished replaying 12 cached step(s); asking the agent to verify the result.`
+- **Verification outcome (with the reason)**: `Cache verification FAILED for 'login.json' - the replay did not achieve the expected result. Agent's reason: the submit button was missing. The cache will be invalidated so it is not reused.`
+- **Invalidation / recording**: `Cache invalidated and will not be reused: ...` and `Recorded trajectory to 'login.json' (12 steps, 1 parameter(s): current_date).`
+
+In particular, verification failures now include the agent's explanation and the
+affected cache file, instead of an unexplained `Cache verification failed!`.
 
 ## Limitations
 

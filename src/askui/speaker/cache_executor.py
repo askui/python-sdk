@@ -17,6 +17,7 @@ from askui.models.shared.agent_message_param import (
 from askui.models.shared.settings import CacheExecutionSettings
 from askui.utils.caching.cache_manager import CacheManager
 from askui.utils.caching.cache_parameter_handler import CacheParameterHandler
+from askui.utils.caching.reporting_utils import report_cache_event
 from askui.utils.visual_validation import (
     compute_ahash,
     compute_hamming_distance,
@@ -125,6 +126,9 @@ class CacheExecutor(Speaker):
 
         # Activation context received via on_activate()
         self._activation_context: dict[str, Any] = {}
+
+        # Reporter for surfacing replay progress (set on activation).
+        self._reporter: "Reporter | None" = None
 
     @property
     def current_cache_file(self) -> "CacheFile | None":
@@ -278,10 +282,12 @@ class CacheExecutor(Speaker):
 
     def _handle_needs_agent(self, result: ExecutionResult) -> SpeakerResult:
         """Handle cache execution pausing for non-cacheable tool."""
-        logger.info(
-            "Paused cache execution at step %d "
-            "(non-cacheable tool - agent will handle this step)",
-            result.step_index,
+        tool_name = getattr(result.tool_result, "name", "unknown")
+        report_cache_event(
+            self._reporter,
+            f"Paused replay at step {result.step_index}: the '{tool_name}' tool "
+            "cannot be replayed from cache; the agent will perform this step.",
+            log=logger,
         )
         self._executing_from_cache = False
 
@@ -338,8 +344,11 @@ class CacheExecutor(Speaker):
         result: ExecutionResult,  # noqa: ARG002
     ) -> SpeakerResult:
         """Handle cache execution completion."""
-        logger.info(
-            "Cache trajectory execution completed - requesting agent verification"
+        report_cache_event(
+            self._reporter,
+            f"Finished replaying {len(self._trajectory)} cached step(s); "
+            "asking the agent to verify the result.",
+            log=logger,
         )
         self._executing_from_cache = False
         self._cache_verification_pending = True
@@ -373,10 +382,12 @@ class CacheExecutor(Speaker):
         self, cache_manager: CacheManager, result: ExecutionResult
     ) -> SpeakerResult:
         """Handle cache execution failure."""
-        logger.error(
-            "Cache execution failed at step %d: %s",
-            result.step_index,
-            result.error_message,
+        report_cache_event(
+            self._reporter,
+            f"Cache replay failed at step {result.step_index}: "
+            f"{result.error_message}. The agent will complete the task manually.",
+            log=logger,
+            level=logging.ERROR,
         )
         self._executing_from_cache = False
 
@@ -510,15 +521,22 @@ class CacheExecutor(Speaker):
             self._visual_validation_enabled = False
             logger.debug("Visual validation disabled or not configured")
 
-        logger.info(
-            "Cache execution activated: %s (%d steps, starting from step %d)",
-            Path(trajectory_file).name,
-            len(self._cache_file.trajectory),
-            start_from_step_index,
+        # Reporter for surfacing replay progress/outcomes to the user.
+        reporter: Reporter | None = context.get("reporter")
+        self._reporter = reporter
+
+        step_count = len(self._cache_file.trajectory)
+        from_suffix = (
+            "" if start_from_step_index == 0 else f" from step {start_from_step_index}"
+        )
+        report_cache_event(
+            self._reporter,
+            f"Replaying cached trajectory '{Path(trajectory_file).name}' "
+            f"({step_count} steps){from_suffix}.",
+            log=logger,
         )
 
         # Report cache execution statistics to the reporter
-        reporter: Reporter | None = context.get("reporter")
         if reporter and self._cache_file.metadata.token_usage:
             reporter.add_cache_execution_statistics(
                 self._cache_file.metadata.token_usage.model_dump()
@@ -536,6 +554,7 @@ class CacheExecutor(Speaker):
         self._current_step_index = 0
         self._message_history = []
         self._activation_context = {}
+        self._reporter = None
 
     def _get_next_step(
         self, conversation_messages: list[MessageParam] | None = None

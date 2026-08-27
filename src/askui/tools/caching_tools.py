@@ -7,8 +7,10 @@ from typing_extensions import override
 
 from ..models.shared.tools import Tool
 from ..utils.caching.cache_manager import CacheManager
+from ..utils.caching.reporting_utils import report_cache_event
 
 if TYPE_CHECKING:
+    from ..reporting import Reporter
     from ..speaker.cache_executor import CacheExecutor
 
 logger = logging.getLogger(__name__)
@@ -27,12 +29,15 @@ class VerifyCacheExecution(Tool):
             trajectory was replayed. If `None`, the tool only reports the result.
         cache_manager: The active `CacheManager`, used to persist metadata. If
             `None`, the tool only reports the result.
+        reporter: Optional reporter used to surface the verification outcome
+            (and its reason) to the user in addition to the logs.
     """
 
     def __init__(
         self,
         cache_executor: "CacheExecutor | None" = None,
         cache_manager: "CacheManager | None" = None,
+        reporter: "Reporter | None" = None,
     ) -> None:
         super().__init__(
             name="verify_cache_execution",
@@ -79,6 +84,7 @@ class VerifyCacheExecution(Tool):
         )
         self._cache_executor = cache_executor
         self._cache_manager = cache_manager
+        self._reporter = reporter
         self.is_cacheable = False  # Verification is not cacheable
 
     @override
@@ -93,18 +99,37 @@ class VerifyCacheExecution(Tool):
         Returns:
             Confirmation message
         """
-        message = (
+        cache_name = self._current_cache_name()
+        if success:
+            report_cache_event(
+                self._reporter,
+                f"Cache verification PASSED for {cache_name}: {verification_notes}",
+                log=logger,
+                level=logging.INFO,
+            )
+        else:
+            report_cache_event(
+                self._reporter,
+                f"Cache verification FAILED for {cache_name} - the replay did not "
+                f"achieve the expected result. Agent's reason: {verification_notes}. "
+                "The cache will be invalidated so it is not reused.",
+                log=logger,
+                level=logging.WARNING,
+            )
+
+        self._persist_verification(success, verification_notes)
+        return (
             f"Cache verification reported: success={success}, "
             f"notes={verification_notes}"
         )
-        if success:
-            logger.info("Cache verified successfully")
-        else:
-            logger.warning("Cache verification failed!")
-        logger.debug("Cache verification notes: %s", verification_notes)
 
-        self._persist_verification(success, verification_notes)
-        return message
+    def _current_cache_name(self) -> str:
+        """Human-readable name of the trajectory being verified."""
+        if self._cache_executor is not None:
+            path = self._cache_executor.current_cache_file_path
+            if path:
+                return f"'{Path(path).name}'"
+        return "the cached trajectory"
 
     def _persist_verification(self, success: bool, verification_notes: str) -> None:
         """Persist the verification outcome to the trajectory metadata, if wired."""

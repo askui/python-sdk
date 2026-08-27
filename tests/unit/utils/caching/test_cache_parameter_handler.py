@@ -111,3 +111,76 @@ def test_substitute_parameters_replaces_placeholder() -> None:
 def test_message_param_import_is_available() -> None:
     # Guard that MessageParam remains importable for this module's provider stub.
     assert MessageParam is not None
+
+
+class _RaisingVlmProvider:
+    """Provider that fails if the LLM is called - used to assert it is skipped."""
+
+    model_id = "should-not-be-called"
+
+    def create_message(self, **_: Any) -> _FakeResponse:
+        msg = "LLM should not be called when there are no candidates"
+        raise AssertionError(msg)
+
+
+class TestCandidateCollection:
+    def test_excludes_coordinates_actions_keys_and_tool_names(self) -> None:
+        trajectory = [
+            ToolUseBlockParam(
+                id="0",
+                name="computer_tool",
+                input={"action": "left_click", "coordinate": [100, 200]},
+            ),
+            ToolUseBlockParam(
+                id="1", name="keyboard_tool", input={"action": "key", "key": "Return"}
+            ),
+            ToolUseBlockParam(
+                id="2",
+                name="computer_tool",
+                input={"action": "type", "text": "hello world"},
+            ),
+        ]
+        candidates = CacheParameterHandler._collect_candidate_values(trajectory)
+        # Only the typed free text is a candidate.
+        assert candidates == ["hello world"]
+
+    def test_dedupes_and_skips_short_and_templated_values(self) -> None:
+        trajectory = [
+            ToolUseBlockParam(id="0", name="t", input={"text": "repeat"}),
+            ToolUseBlockParam(id="1", name="t", input={"text": "repeat"}),
+            ToolUseBlockParam(id="2", name="t", input={"note": "x"}),  # too short
+            ToolUseBlockParam(id="3", name="t", input={"note": "{{already}}"}),
+        ]
+        candidates = CacheParameterHandler._collect_candidate_values(trajectory)
+        assert candidates == ["repeat"]
+
+    def test_no_candidates_skips_llm_call(self) -> None:
+        """A trajectory of only clicks must not trigger an LLM call."""
+        trajectory = [
+            ToolUseBlockParam(
+                id="0",
+                name="computer_tool",
+                input={"action": "left_click", "coordinate": [10, 20]},
+            )
+        ]
+        goal, out_traj, params = CacheParameterHandler.identify_and_parameterize(
+            trajectory=trajectory,
+            goal="click the button",
+            identification_strategy="llm",
+            vlm_provider=_RaisingVlmProvider(),  # type: ignore[arg-type]
+        )
+        assert params == {}
+        assert out_traj == trajectory
+        assert goal == "click the button"
+
+
+class TestHallucinatedValueRejection:
+    def test_value_not_in_candidates_is_dropped(self) -> None:
+        # The model returns a value that was never a candidate -> reject it.
+        response = (
+            '{"parameters": [{"name": "made_up", "value": "not-a-candidate", '
+            '"description": "hallucinated"}]}'
+        )
+        _, trajectory, params = _parameterize(response, value="admin")
+        assert params == {}
+        assert trajectory[0].input == {"text": "admin"}
