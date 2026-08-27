@@ -258,6 +258,34 @@ class CacheManager:
         except Exception:
             logger.exception("Failed to update cache metadata")
 
+    def mark_execution_unsuccessful(
+        self,
+        cache_file: CacheFile,
+        cache_file_path: str,
+        reason: str,
+    ) -> None:
+        """Record a failed execution attempt, invalidate the cache, and persist.
+
+        Used when the agent explicitly reports (via `verify_cache_execution`)
+        that a replayed trajectory did not achieve the target state, so the cache
+        should not be trusted for future runs.
+
+        Args:
+            cache_file: The cache file to update
+            cache_file_path: Path to write the updated cache file
+            reason: Human-readable reason for invalidation
+        """
+        try:
+            self.record_execution_attempt(cache_file, success=False)
+            self.invalidate_cache(cache_file, reason=reason)
+            self._write_cache_file(cache_file, cache_file_path)
+            logger.info(
+                "Invalidated cache after unsuccessful execution: %s",
+                Path(cache_file_path).name,
+            )
+        except Exception:
+            logger.exception("Failed to invalidate cache metadata")
+
     def _write_cache_file(self, cache_file: CacheFile, cache_file_path: str) -> None:
         """Write cache file to disk.
 
@@ -344,7 +372,7 @@ class CacheManager:
             else f"{file_name}.json"
         )
         self._goal = goal
-        self._toolbox = toolbox
+        self._toolbox = toolbox or self._toolbox
         self._accumulated_usage = UsageParam()
         self._was_cached_execution = False
         self._cache_writer_settings = cache_writer_settings or CacheWritingSettings()
@@ -376,6 +404,14 @@ class CacheManager:
             logger.info("Will not write cache file as this was a cached execution")
             self._reset_recording_state()
             return "Skipped writing cache (was cached execution)"
+
+        # Do not write (or overwrite) a cache that has nothing to replay. A
+        # trajectory with no cacheable steps would be a silent no-op "cache hit"
+        # on execute/auto and could clobber a previously good cache.
+        if not self._has_cacheable_steps(self._tool_blocks):
+            logger.info("No cacheable steps recorded; skipping cache write")
+            self._reset_recording_state()
+            return "Skipped writing cache (no cacheable steps)"
 
         # Blank non-cacheable tool inputs BEFORE parameterization
         # (so they don't get sent to LLM for parameter identification)
@@ -451,6 +487,23 @@ class CacheManager:
             identification_strategy=self._cache_writer_settings.parameter_identification_strategy,
             vlm_provider=self._vlm_provider,
         )
+
+    def _has_cacheable_steps(self, trajectory: list[ToolUseBlockParam]) -> bool:
+        """Whether the trajectory contains at least one cacheable tool step.
+
+        Without a toolbox we cannot tell which tools are cacheable, so we
+        conservatively treat a non-empty trajectory as cacheable.
+        """
+        if not trajectory:
+            return False
+        if self._toolbox is None:
+            return True
+        tools = self._toolbox.tool_map
+        for tool_block in trajectory:
+            tool = tools.get(tool_block.name)
+            if tool is None or tool.is_cacheable:
+                return True
+        return False
 
     def _blank_non_cacheable_tool_inputs(
         self, trajectory: list[ToolUseBlockParam]
@@ -645,7 +698,7 @@ class CacheManager:
 
         cache_file = CacheFile(
             metadata=CacheMetadata(
-                version="0.2",
+                version="0.3",
                 created_at=datetime.now(tz=timezone.utc),
                 goal=goal_to_save,
                 token_usage=self._accumulated_usage,

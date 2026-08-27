@@ -9,9 +9,10 @@ from askui.models.shared.settings import CacheExecutionSettings, CachingSettings
 
 
 def test_act_with_caching_strategy_execute(vision_agent: ComputerAgent) -> None:
-    """Test that caching_strategy='execute' adds retrieve and execute tools."""
+    """Test that caching_strategy='execute' with a detected trajectory runs."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Create a dummy cache file
+        # Create a dummy cache file and reference it by name so it is
+        # auto-detected and surfaced to the agent.
         cache_dir = Path(temp_dir)
         cache_file = cache_dir / "test_cache.json"
         cache_file.write_text("[]", encoding="utf-8")
@@ -22,6 +23,7 @@ def test_act_with_caching_strategy_execute(vision_agent: ComputerAgent) -> None:
             caching_settings=CachingSettings(
                 strategy="execute",
                 cache_dir=str(cache_dir),
+                filename="test_cache.json",
             ),
         )
         assert True
@@ -165,6 +167,7 @@ def test_act_with_custom_cached_execution_tool_settings(
             caching_settings=CachingSettings(
                 strategy="execute",
                 cache_dir=str(cache_dir),
+                filename="test_cache.json",
                 execution_settings=custom_settings,
             ),
         )

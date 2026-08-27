@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 # Regex pattern for matching parameters: {{parameter_name}}
 # Allows alphanumeric characters and underscores, must start with letter/underscore
 CACHE_PARAMETER_PATTERN = r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}"
+# Pattern a parameter *name* must fully match to be usable with the {{...}} syntax.
+CACHE_PARAMETER_NAME_PATTERN = r"[a-zA-Z_][a-zA-Z0-9_]*"
 
 
 class CacheParameterDefinition:
@@ -199,13 +201,11 @@ class CacheParameterHandler:
                 len(parameter_data.get("parameters", [])),
             )
 
-            # Convert to our data structures
-            parameter_definitions = [
-                CacheParameterDefinition(
-                    name=p["name"], value=p["value"], description=p["description"]
-                )
-                for p in parameter_data.get("parameters", [])
-            ]
+            # Convert to our data structures, dropping entries that would corrupt
+            # the trajectory (invalid names / empty values).
+            parameter_definitions = CacheParameterHandler._build_parameter_definitions(
+                parameter_data.get("parameters", [])
+            )
 
             parameters_dict = {p.name: p.description for p in parameter_definitions}
 
@@ -240,6 +240,47 @@ class CacheParameterHandler:
             return {}, []
         else:
             return parameters_dict, parameter_definitions
+
+    @staticmethod
+    def _build_parameter_definitions(
+        raw_parameters: Any,
+    ) -> list[CacheParameterDefinition]:
+        """Validate LLM-identified parameters, dropping corrupting entries.
+
+        Drops parameters whose name is not a valid `{{param}}` identifier (they
+        would never be detected by `extract_parameters`, so validation would
+        wrongly pass and substitution would never happen) and parameters with an
+        empty value (an empty replacement key matches everywhere and would shred
+        every string in the trajectory).
+        """
+        definitions: list[CacheParameterDefinition] = []
+        if not isinstance(raw_parameters, list):
+            return definitions
+        for p in raw_parameters:
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name")
+            value = p.get("value")
+            if not isinstance(name, str) or not re.fullmatch(
+                CACHE_PARAMETER_NAME_PATTERN, name
+            ):
+                logger.warning(
+                    "Skipping identified parameter with invalid name: %r", name
+                )
+                continue
+            if value is None or not str(value).strip():
+                logger.warning(
+                    "Skipping identified parameter %r with empty value", name
+                )
+                continue
+            definitions.append(
+                CacheParameterDefinition(
+                    name=name,
+                    value=value,
+                    description=str(p.get("description", "")),
+                )
+            )
+        return definitions
 
     @staticmethod
     def _replace_values_with_parameters(

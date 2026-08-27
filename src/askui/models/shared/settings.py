@@ -202,7 +202,7 @@ class CacheMetadata(BaseModel):
         visual_validation: Visual validation configuration
     """
 
-    version: str = "0.2"
+    version: str = "0.3"
     created_at: datetime
     goal: str | None = None
     last_executed_at: datetime | None = None
@@ -234,7 +234,6 @@ class CacheWritingSettings(BaseModel):
     Args:
         filename: Name for the cache file (auto-generated if empty)
         parameter_identification_strategy: How to identify parameters("llm" or "preset")
-        llm_parameter_id_api_provider: API provider for LLM parameter identification
         visual_verification_method: Visual hash method ("phash", "ahash", or "none")
         visual_validation_region_size: Size of region to hash around coordinates
     """
@@ -273,11 +272,19 @@ class CachingSettings(BaseModel):
             - "auto": Execute from cache if available, otherwise record
         cache_dir (str): Directory path for storing cache files.
             Default: ".askui_cache".
+        filename (str): Name of the trajectory/cache file for this test case
+            (the ".json" suffix is optional). It is used as the lookup key in
+            "execute"/"auto" modes (the SDK checks whether
+            `<cache_dir>/<filename>` exists and, if so, feeds its details to the
+            agent automatically) and as the target filename in "record"/"auto"
+            modes. If empty, no trajectory is auto-detected and recordings get an
+            auto-generated filename.
         writing_settings: Settings for cache recording (used in "record"/"auto" modes)
         execution_settings: Settings for cache playback (used in "execute"/"auto" modes)
     """
 
     strategy: CACHING_STRATEGY | None = None
     cache_dir: str = ".askui_cache"
+    filename: str = ""
     writing_settings: CacheWritingSettings | None = None
     execution_settings: CacheExecutionSettings | None = None

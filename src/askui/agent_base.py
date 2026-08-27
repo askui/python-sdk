@@ -2,7 +2,7 @@ import logging
 import time
 import types
 from pathlib import Path
-from typing import Annotated, Literal, Optional, Type, overload
+from typing import Annotated, Any, Literal, Optional, Type, overload
 
 from dotenv import load_dotenv
 from PIL import Image as PILImage
@@ -13,11 +13,12 @@ from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback, ConversationStatisticsCallback
 from askui.container import telemetry
 from askui.locators.locators import Locator
-from askui.models.shared.agent_message_param import MessageParam
+from askui.models.shared.agent_message_param import MessageParam, TextBlockParam
 from askui.models.shared.conversation import Conversation, Speakers
 from askui.models.shared.secrets import Secret, SecretVault
 from askui.models.shared.settings import (
     ActSettings,
+    CacheFile,
     CacheWritingSettings,
     CachingSettings,
     GetSettings,
@@ -31,7 +32,6 @@ from askui.tools.agent_os import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.tools.caching_tools import (
     InspectCacheMetadata,
-    RetrieveCachedTestExecutions,
     VerifyCacheExecution,
 )
 from askui.tools.get_tool import GetTool
@@ -269,13 +269,18 @@ class Agent:
         # Make the vault available for substitution (tools) and redaction (history).
         # The Conversation propagates it to the ToolCollection.
         self._conversation.secret_vault = active_vault
-        _act_settings = act_settings or self.act_settings
+        # Deep-copy so caching-related mutations (e.g. injecting the CACHE_USE
+        # prompt) do not accumulate on the Agent's persistent, reused settings
+        # object and leak into subsequent act() calls.
+        _act_settings = (act_settings or self.act_settings).model_copy(deep=True)
 
         _caching_settings: CachingSettings = caching_settings or self.caching_settings
 
-        tools, cache_manager = self._patch_act_with_cache(
+        tools, cache_manager, cache_hint = self._patch_act_with_cache(
             _caching_settings, _act_settings, tools, goal_str
         )
+        if cache_hint:
+            messages = self._inject_cache_hint(messages, cache_hint)
         _tools = self._build_tools(tools)
 
         # setup opentelemetry for tracing
@@ -297,7 +302,13 @@ class Agent:
         )
 
     def _build_tools(self, tools: list[Tool] | ToolCollection | None) -> ToolCollection:
-        tool_collection = self.act_tool_collection
+        # Build a fresh per-call collection copied from the agent's base tools so
+        # that per-call additions (caching tools, switch_speaker, per-call tools)
+        # do not accumulate on the persistent `act_tool_collection` across calls.
+        # Otherwise a run-specific `VerifyCacheExecution` (wired to that run's
+        # CacheExecutor/CacheManager) would linger and could persist a later,
+        # unrelated run's result to the previous run's trajectory file.
+        tool_collection = self.act_tool_collection + ToolCollection()
         if isinstance(tools, list):
             tool_collection.append_tool(*tools)
         if isinstance(tools, ToolCollection):
@@ -324,8 +335,17 @@ class Agent:
         settings: ActSettings,
         tools: list[Tool] | ToolCollection | None,
         goal: str,
-    ) -> tuple[list[Tool] | ToolCollection, CacheManager | None]:
+    ) -> tuple[list[Tool] | ToolCollection, CacheManager | None, str | None]:
         """Patch act settings and tools with caching functionality.
+
+        In ``execute``/``auto`` modes the trajectory for the current test case is
+        auto-detected from ``caching_settings.filename`` (no separate discovery
+        tool call is required): if a usable trajectory exists, its details are
+        returned as a ``cache_hint`` to be surfaced to the agent, and the
+        ``CacheExecutor`` speaker plus verification tooling are wired up. In
+        ``record``/``auto`` modes a cache manager is set up to record the run
+        (in ``auto`` only when no usable trajectory was found, so an existing
+        cache is never overwritten by a fresh recording).
 
         Args:
             caching_settings: The caching settings to apply
@@ -334,29 +354,71 @@ class Agent:
             goal: The goal string for cache recording
 
         Returns:
-            A tuple of (modified_tools, cache_manager)
+            A tuple of ``(modified_tools, cache_manager, cache_hint)`` where
+            ``cache_hint`` is an optional instruction to inject into the first
+            user message.
         """
         caching_tools: list[Tool] = []
         cache_manager: CacheManager | None = None
+        cache_hint: str | None = None
 
-        # Setup execute mode: add caching tools and modify system prompt
-        if caching_settings.strategy in ["execute", "auto"]:
-            # Create CacheExecutor with execution settings and add to speakers
+        # Remove any CacheExecutor registered by a previous act() call so it does
+        # not leak (and get advertised via switch_speaker) into this run.
+        self._conversation.speakers.remove_speaker("CacheExecutor")
+
+        strategy = caching_settings.strategy
+        filename = self._resolve_cache_filename(caching_settings)
+
+        # Detect an existing trajectory for execute/auto modes.
+        cache_file: CacheFile | None = None
+        trajectory_path: Path | None = None
+        if strategy in ("execute", "auto") and filename:
+            trajectory_path = self._resolve_trajectory_path(
+                caching_settings.cache_dir, filename
+            )
+            cache_file = self._read_trajectory_if_present(trajectory_path)
+
+        # Decide whether to replay the detected trajectory. In auto mode an
+        # invalid cache is re-recorded (self-heal) rather than replayed.
+        execute_trajectory = cache_file is not None and (
+            cache_file.metadata.is_valid or strategy == "execute"
+        )
+        should_record = strategy == "record" or (
+            strategy == "auto" and not execute_trajectory
+        )
+
+        if execute_trajectory or should_record:
+            cache_manager = CacheManager()
+
+        # Setup execute mode: wire the CacheExecutor and verification tooling and
+        # tell the agent (via the hint) exactly which trajectory to replay.
+        if (
+            execute_trajectory
+            and cache_file is not None
+            and trajectory_path is not None
+        ):
             cache_executor = CacheExecutor(caching_settings.execution_settings)
             self._conversation.speakers.add_speaker(cache_executor)
 
-            # Add caching tools (switch_speaker tool is added automatically
-            # by Conversation._setup_speaker_handoff)
+            # switch_speaker tool is added automatically by
+            # Conversation._setup_speaker_handoff
             caching_tools.extend(
                 [
-                    RetrieveCachedTestExecutions(caching_settings.cache_dir),
-                    VerifyCacheExecution(),
+                    VerifyCacheExecution(
+                        cache_executor=cache_executor,
+                        cache_manager=cache_manager,
+                    ),
                     InspectCacheMetadata(),
                 ]
             )
             if settings.messages.system is None:
                 settings.messages.system = create_default_prompt()
             settings.messages.system.cache_use = CACHE_USE_PROMPT
+            cache_hint = self._build_cache_execution_hint(trajectory_path, cache_file)
+        elif strategy == "auto":
+            # Auto mode with nothing usable to replay: let the agent know a new
+            # trajectory is being recorded for next time.
+            cache_hint = self._build_no_cache_hint()
 
         # Add caching tools to the tools list
         if isinstance(tools, list):
@@ -366,14 +428,11 @@ class Agent:
         else:
             tools = caching_tools
 
-        # Setup record mode: create cache manager for recording
-        if caching_settings.strategy in ["record", "auto"]:
+        # Setup record mode: start recording the trajectory.
+        if should_record and cache_manager is not None:
             cache_writer_settings = (
                 caching_settings.writing_settings or CacheWritingSettings()
             )
-            filename = cache_writer_settings.filename or ""
-
-            cache_manager = CacheManager()
             cache_manager.start_recording(
                 cache_dir=caching_settings.cache_dir,
                 file_name=filename,
@@ -382,7 +441,129 @@ class Agent:
                 vlm_provider=self._vlm_provider,
             )
 
-        return tools, cache_manager
+        return tools, cache_manager, cache_hint
+
+    @staticmethod
+    def _resolve_cache_filename(caching_settings: CachingSettings) -> str:
+        """Resolve the trajectory filename, preferring the top-level setting."""
+        if caching_settings.filename:
+            return caching_settings.filename
+        if (
+            caching_settings.writing_settings
+            and caching_settings.writing_settings.filename
+        ):
+            return caching_settings.writing_settings.filename
+        return ""
+
+    @staticmethod
+    def _resolve_trajectory_path(cache_dir: str, filename: str) -> Path:
+        """Build the full trajectory path, ensuring a ``.json`` suffix."""
+        name = filename if filename.endswith(".json") else f"{filename}.json"
+        return Path(cache_dir) / name
+
+    @staticmethod
+    def _read_trajectory_if_present(trajectory_path: Path) -> "CacheFile | None":
+        """Read a trajectory file if it exists and is readable, else ``None``."""
+        if not trajectory_path.is_file():
+            return None
+        try:
+            return CacheManager.read_cache_file(trajectory_path)
+        except Exception:
+            logger.exception(
+                "Found trajectory %s but failed to read it; ignoring cache",
+                trajectory_path,
+            )
+            return None
+
+    @staticmethod
+    def _build_cache_execution_hint(
+        trajectory_path: Path, cache_file: CacheFile
+    ) -> str:
+        """Build the first-message hint describing an available cached trajectory."""
+        path_str = str(trajectory_path)
+        parameters = cache_file.cache_parameters
+        if parameters:
+            param_lines = "\n".join(
+                f"  - {name}: {description}" for name, description in parameters.items()
+            )
+            param_block = (
+                "This trajectory requires the following parameters (provide "
+                f"values for ALL of them):\n{param_lines}"
+            )
+            example_params = ", ".join(f"'{name}': '<value>'" for name in parameters)
+            switch_example = (
+                "switch_speaker(speaker_name='CacheExecutor', speaker_context={"
+                f"'trajectory_file': '{path_str}', "
+                f"'parameter_values': {{{example_params}}}}})"
+            )
+        else:
+            param_block = "This trajectory requires no parameters."
+            switch_example = (
+                "switch_speaker(speaker_name='CacheExecutor', speaker_context={"
+                f"'trajectory_file': '{path_str}'}})"
+            )
+
+        validity_note = ""
+        if not cache_file.metadata.is_valid:
+            validity_note = (
+                "\nNOTE: This cached trajectory is currently marked INVALID "
+                f"(reason: {cache_file.metadata.invalidation_reason}). It may not "
+                "replay correctly; execute with caution and verify the result "
+                "carefully."
+            )
+
+        return (
+            "<CACHED_TRAJECTORY_AVAILABLE>\n"
+            "A cached trajectory for this test case is available and should be "
+            "used to fast-forward execution instead of performing the steps "
+            "manually.\n"
+            f"- trajectory_file: {path_str}\n"
+            f"{param_block}\n"
+            "Before taking any other action, switch to the CacheExecutor speaker "
+            "using the switch_speaker tool, for example:\n"
+            f"{switch_example}"
+            f"{validity_note}\n"
+            "</CACHED_TRAJECTORY_AVAILABLE>"
+        )
+
+    @staticmethod
+    def _build_no_cache_hint() -> str:
+        """Build the first-message hint used in auto mode when no cache exists."""
+        return (
+            "<NO_CACHED_TRAJECTORY>\n"
+            "No cached trajectory exists for this test case yet, so there is "
+            "nothing to replay. Accomplish the goal normally; your actions are "
+            "being recorded so they can be replayed on future runs.\n"
+            "</NO_CACHED_TRAJECTORY>"
+        )
+
+    @staticmethod
+    def _inject_cache_hint(
+        messages: list[MessageParam], cache_hint: str
+    ) -> list[MessageParam]:
+        """Append the cache hint to the first user message.
+
+        The hint is appended to (not inserted before) the first user message to
+        avoid introducing consecutive same-role messages at the start of the
+        history. If no user message exists (unusual), the messages are returned
+        unchanged.
+        """
+        index = next(
+            (i for i, m in enumerate(messages) if m.role == "user"),
+            None,
+        )
+        if index is None:
+            return messages
+        target = messages[index]
+        if isinstance(target.content, str):
+            new_content: str | list[Any] = f"{target.content}\n\n{cache_hint}"
+        else:
+            new_content = [
+                *target.content,
+                TextBlockParam(type="text", text=cache_hint),
+            ]
+        messages[index] = target.model_copy(update={"content": new_content})
+        return messages
 
     @overload
     def get(

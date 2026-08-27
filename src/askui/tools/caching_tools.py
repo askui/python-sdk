@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import validate_call
 from typing_extensions import override
@@ -7,131 +8,32 @@ from typing_extensions import override
 from ..models.shared.tools import Tool
 from ..utils.caching.cache_manager import CacheManager
 
+if TYPE_CHECKING:
+    from ..speaker.cache_executor import CacheExecutor
+
 logger = logging.getLogger(__name__)
 
 
-class RetrieveCachedTestExecutions(Tool):
-    """
-    List all available trajectory files that can be used for fast-forward execution
-    """
-
-    def __init__(self, cache_dir: str, trajectories_format: str = ".json") -> None:
-        super().__init__(
-            name="retrieve_available_trajectories_tool",
-            description=(
-                "Use this tool to list all available pre-recorded trajectory "
-                "files in the trajectories directory. These trajectories "
-                "represent successful UI interaction sequences that can be "
-                "replayed using the execute_trajectory_tool. Call this tool "
-                "first to see which trajectories are available before "
-                "executing one. The tool returns a list of file paths to "
-                "available trajectory files.\n\n"
-                "By default, only valid (non-invalidated) caches are returned. "
-                "Set include_invalid=True to see all caches including those "
-                "marked as invalid due to repeated failures."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "include_invalid": {
-                        "type": "boolean",
-                        "description": (
-                            "Whether to include invalid/invalidated caches in "
-                            "the results. Default is False (only show valid "
-                            "caches)."
-                        ),
-                        "default": False,
-                    },
-                },
-                "required": [],
-            },
-        )
-        self._cache_dir = Path(cache_dir)
-        self._trajectories_format = trajectories_format
-        self.is_cacheable = True
-
-    @override
-    @validate_call
-    def __call__(self, include_invalid: bool = False) -> list[str]:  # type: ignore
-        """Retrieve available cached trajectories.
-
-        Args:
-            include_invalid: Whether to include invalid caches
-
-        Returns:
-            List of strings with filename and parameters info.
-        """
-        logger.info(
-            "Retrieving cached trajectories from %s (include_invalid=%s)",
-            self._cache_dir,
-            include_invalid,
-        )
-
-        if not Path.is_dir(self._cache_dir):
-            error_msg = f"Trajectories directory not found: {self._cache_dir}"
-            logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-
-        all_files = [
-            f
-            for f in self._cache_dir.iterdir()
-            if str(f).endswith(self._trajectories_format)
-        ]
-        logger.debug("Found %d total cache files", len(all_files))
-
-        available: list[str] = []
-        invalid_count = 0
-        unreadable_count = 0
-
-        for f in all_files:
-            try:
-                cache_file = CacheManager.read_cache_file(f)
-
-                # Check if we should include this cache
-                if not include_invalid and not cache_file.metadata.is_valid:
-                    invalid_count += 1
-                    logger.debug(
-                        "Excluding invalid cache: %s (reason: %s)",
-                        f.name,
-                        cache_file.metadata.invalidation_reason,
-                    )
-                    continue
-
-                # Add cache info with filename and parameters
-                available.append(
-                    f"filename: {f!s} (parameters: {cache_file.cache_parameters})"
-                )
-
-            except Exception:  # noqa: PERF203
-                unreadable_count += 1
-                logger.exception("Failed to read cache file %s", f.name)
-                continue
-
-        logger.info(
-            "Found %d cache(s), excluded %d invalid, %d unreadable",
-            len(available),
-            invalid_count,
-            unreadable_count,
-        )
-
-        if not available:
-            if include_invalid:
-                warning_msg = f"Warning: No trajectory files found in {self._cache_dir}"
-            else:
-                warning_msg = (
-                    f"Warning: No valid trajectory files found in "
-                    f"{self._cache_dir}. "
-                    "Try include_invalid=True to see all caches."
-                )
-            logger.warning(warning_msg)
-
-        return available
-
-
 class VerifyCacheExecution(Tool):
-    """Tool for agent to explicitly report cache execution verification results."""
+    """Tool for the agent to report cache execution verification results.
 
-    def __init__(self) -> None:
+    When wired with the active `CacheExecutor` and `CacheManager`, this tool
+    also persists the outcome to the trajectory's metadata: a successful
+    verification records the execution attempt, while an unsuccessful one
+    additionally invalidates the cache so it is not reused.
+
+    Args:
+        cache_executor: The active `CacheExecutor`, used to resolve which
+            trajectory was replayed. If `None`, the tool only reports the result.
+        cache_manager: The active `CacheManager`, used to persist metadata. If
+            `None`, the tool only reports the result.
+    """
+
+    def __init__(
+        self,
+        cache_executor: "CacheExecutor | None" = None,
+        cache_manager: "CacheManager | None" = None,
+    ) -> None:
         super().__init__(
             name="verify_cache_execution",
             description=(
@@ -147,7 +49,9 @@ class VerifyCacheExecution(Tool):
                 "Set success=False if:\n"
                 "- The execution did not achieve the target state\n"
                 "- You had to make corrections or perform additional actions\n"
-                "- The final state is incorrect or incomplete"
+                "- The final state is incorrect or incomplete\n\n"
+                "Reporting success=False invalidates the cache so it is not "
+                "reused until it is re-recorded."
             ),
             input_schema={
                 "type": "object",
@@ -173,12 +77,14 @@ class VerifyCacheExecution(Tool):
                 "required": ["success", "verification_notes"],
             },
         )
+        self._cache_executor = cache_executor
+        self._cache_manager = cache_manager
         self.is_cacheable = False  # Verification is not cacheable
 
     @override
     @validate_call
     def __call__(self, success: bool, verification_notes: str) -> str:
-        """Record cache verification result.
+        """Record cache verification result and persist it to metadata.
 
         Args:
             success: Whether cache execution achieved target state
@@ -197,7 +103,35 @@ class VerifyCacheExecution(Tool):
             logger.warning("Cache verification failed!")
         logger.debug("Cache verification notes: %s", verification_notes)
 
+        self._persist_verification(success, verification_notes)
         return message
+
+    def _persist_verification(self, success: bool, verification_notes: str) -> None:
+        """Persist the verification outcome to the trajectory metadata, if wired."""
+        if self._cache_executor is None or self._cache_manager is None:
+            return
+
+        cache_file = self._cache_executor.current_cache_file
+        cache_file_path = self._cache_executor.current_cache_file_path
+        if cache_file is None or cache_file_path is None:
+            logger.debug("No active cache execution to persist verification result for")
+            return
+
+        if success:
+            self._cache_manager.update_metadata_on_completion(
+                cache_file=cache_file,
+                cache_file_path=cache_file_path,
+                success=True,
+            )
+        else:
+            reason = (
+                f"Agent reported unsuccessful cache execution: {verification_notes}"
+            )
+            self._cache_manager.mark_execution_unsuccessful(
+                cache_file=cache_file,
+                cache_file_path=cache_file_path,
+                reason=reason,
+            )
 
 
 class InspectCacheMetadata(Tool):
@@ -224,11 +158,7 @@ class InspectCacheMetadata(Tool):
                 "properties": {
                     "trajectory_file": {
                         "type": "string",
-                        "description": (
-                            "Full path to the trajectory file to inspect. "
-                            "Use retrieve_available_trajectories_tool to "
-                            "find available files."
-                        ),
+                        "description": ("Full path to the trajectory file to inspect."),
                     },
                 },
                 "required": ["trajectory_file"],
@@ -249,10 +179,7 @@ class InspectCacheMetadata(Tool):
         logger.info("Inspecting cache metadata: %s", Path(trajectory_file).name)
 
         if not Path(trajectory_file).is_file():
-            error_msg = (
-                f"Trajectory file not found: {trajectory_file}\n"
-                "Use retrieve_available_trajectories_tool to see available files."
-            )
+            error_msg = f"Trajectory file not found: {trajectory_file}"
             logger.error(error_msg)
             return error_msg
 

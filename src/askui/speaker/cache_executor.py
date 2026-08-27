@@ -126,6 +126,16 @@ class CacheExecutor(Speaker):
         # Activation context received via on_activate()
         self._activation_context: dict[str, Any] = {}
 
+    @property
+    def current_cache_file(self) -> "CacheFile | None":
+        """The cache file of the most recently activated trajectory, if any."""
+        return self._cache_file
+
+    @property
+    def current_cache_file_path(self) -> str | None:
+        """Path of the most recently activated trajectory, if any."""
+        return self._cache_file_path
+
     @override
     def can_handle(self, conversation: "Conversation") -> bool:  # noqa: ARG002
         """Check if cache execution is active or should be activated.
@@ -206,9 +216,11 @@ class CacheExecutor(Speaker):
                 if self._current_step_index < len(self._trajectory):
                     time.sleep(self._delay_time_between_actions)
 
-        # Check if we have a trajectory
-        if not self._trajectory or not self._toolbox:
-            logger.error("Cache executor called but no trajectory or toolbox available")
+        # Require a toolbox to execute. An empty trajectory is allowed: it flows
+        # into `_get_next_step()`'s COMPLETED path (which requests verification)
+        # rather than silently bouncing back to the agent.
+        if self._toolbox is None:
+            logger.error("Cache executor called but no toolbox available")
             return SpeakerResult(
                 status="switch_speaker",
                 next_speaker="AgentSpeaker",
@@ -276,6 +288,24 @@ class CacheExecutor(Speaker):
         tool_to_execute = result.tool_result
 
         if tool_to_execute:
+            resume_index = result.step_index + 1
+            more_steps_remain = self._has_executable_steps_from(resume_index)
+
+            if more_steps_remain:
+                resume_instruction = (
+                    "Execute this tool with the necessary parameters. To replay the "
+                    "remaining cached steps afterwards, switch back to the "
+                    "CacheExecutor with "
+                    f"start_from_step_index={resume_index}."
+                )
+            else:
+                resume_instruction = (
+                    "This is the FINAL step of the trajectory. Execute this tool "
+                    "with the necessary parameters, then verify the outcome with the "
+                    "verify_cache_execution tool. Do NOT switch back to the "
+                    "CacheExecutor - there are no further cached steps to replay."
+                )
+
             instruction_message = MessageParam(
                 role="user",
                 content=[
@@ -286,8 +316,7 @@ class CacheExecutor(Speaker):
                             "The previous steps were executed successfully "
                             f"from cache. The next step requires the "
                             f"'{tool_to_execute.name}' tool, which cannot be "
-                            "executed from cache. Please execute this tool with "
-                            "the necessary parameters."
+                            f"executed from cache. {resume_instruction}"
                         ),
                     )
                 ],
@@ -415,14 +444,20 @@ class CacheExecutor(Speaker):
             if not self._cache_file:
                 self._cache_file = cache_manager.read_cache_file(Path(trajectory_file))
 
-        # Validate step index
-        if start_from_step_index < 0 or start_from_step_index >= len(
-            self._cache_file.trajectory
-        ):
+        # Validate step index. `start_from_step_index == len(trajectory)` is
+        # allowed and means "there is nothing left to replay" - this happens when
+        # the agent resumes after handling the trajectory's last step (e.g. a
+        # non-cacheable final step). It is treated as an immediate completion by
+        # `_get_next_step()` instead of being rejected as out of range.
+        trajectory_len = len(self._cache_file.trajectory)
+        if start_from_step_index < 0 or start_from_step_index > trajectory_len:
+            valid_range = (
+                f"0-{trajectory_len}" if trajectory_len > 0 else "0 (empty trajectory)"
+            )
             error_msg = (
                 f"Invalid start_from_step_index: {start_from_step_index}. "
-                f"Trajectory has {len(self._cache_file.trajectory)} steps "
-                f"(valid indices: 0-{len(self._cache_file.trajectory) - 1})."
+                f"Trajectory has {trajectory_len} steps "
+                f"(valid indices: {valid_range})."
             )
             raise ValueError(error_msg)
 
@@ -520,7 +555,7 @@ class CacheExecutor(Speaker):
         if self._current_step_index >= len(self._trajectory):
             return ExecutionResult(
                 status="COMPLETED",
-                step_index=self._current_step_index - 1,
+                step_index=max(self._current_step_index - 1, 0),
                 message_history=self._message_history,
             )
 
@@ -582,6 +617,20 @@ class CacheExecutor(Speaker):
             step_index=step_index,
             tool_result=None,
             message_history=[assistant_message],
+        )
+
+    def _has_executable_steps_from(self, index: int) -> bool:
+        """Return whether any step at or after `index` would still be replayed.
+
+        Skippable steps (e.g. `switch_speaker`, verbosity tools) are ignored.
+        Non-cacheable steps count as executable because resuming would replay up
+        to them and pause again. Used to decide whether the agent should resume
+        cache execution after handling a non-cacheable step, or whether that step
+        was the trajectory's last and no resume is needed.
+        """
+        return any(
+            not self._should_skip_step(self._trajectory[i])
+            for i in range(index, len(self._trajectory))
         )
 
     def _should_pause_for_agent(self, step: ToolUseBlockParam) -> bool:
