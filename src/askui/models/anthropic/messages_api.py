@@ -193,7 +193,9 @@ def _parse_to_anthropic_types(
     _tool_choice = (
         cast("BetaToolChoiceParam", tool_choice) if tool_choice is not None else omit
     )
-    _temperature = temperature or omit
+    # Use `is None` (not truthiness) so an explicit `temperature=0.0`
+    # (fully deterministic) is preserved rather than dropped.
+    _temperature: float | Omit = omit if temperature is None else temperature
 
     return (
         _tools,
@@ -267,7 +269,18 @@ class AnthropicMessagesApi(MessagesApi):
             temperature,
         )
 
-        response = self._client.beta.messages.create(  # type: ignore[misc]
+        # Only forward `temperature` when a value was actually requested. It is
+        # an optional sampling parameter that some `anthropic` client versions do
+        # not expose on `beta.messages.create` (and the client does not accept
+        # `**kwargs`), so passing it unconditionally - even as the `omit`
+        # sentinel - raises `TypeError` at argument binding on those clients.
+        # The other options remain passed as `omit`; they are still part of the
+        # client signature.
+        temperature_kwarg: dict[str, float] = {}
+        if not isinstance(_temperature, Omit):
+            temperature_kwarg["temperature"] = _temperature
+
+        response = self._client.beta.messages.create(  # type: ignore[misc, call-overload]
             messages=_messages,
             max_tokens=max_tokens or 8192,
             cache_control=_cache_control,
@@ -278,7 +291,7 @@ class AnthropicMessagesApi(MessagesApi):
             thinking=_thinking,
             output_config=_output_config,
             tool_choice=_tool_choice,
-            temperature=_temperature,
             timeout=300.0,
+            **temperature_kwarg,
         )
         return MessageParam.model_validate(response.model_dump())
