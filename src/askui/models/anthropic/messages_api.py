@@ -43,6 +43,7 @@ from askui.models.shared.agent_message_param import (
 )
 from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
+from askui.models.shared.thinking import accepts_sampling_params
 from askui.models.shared.tools import ToolCollection
 from askui.utils.image_utils import image_to_base64
 from askui.utils.pdf_utils import PdfSource
@@ -220,6 +221,9 @@ class AnthropicMessagesApi(MessagesApi):
         client: AnthropicApiClient,
     ) -> None:
         self._client = client
+        # Models for which we already warned about an ignored temperature, so
+        # the warning fires at most once per model (not on every step).
+        self._temperature_warned: set[str] = set()
 
     @retry(
         stop=stop_after_attempt(4),  # 3 retries
@@ -272,18 +276,28 @@ class AnthropicMessagesApi(MessagesApi):
             tool_choice,
         )
 
-        # `temperature` is intentionally NOT forwarded to the Anthropic Messages
-        # API. Anthropic has deprecated it for its models: newer `anthropic`
-        # clients removed it from `beta.messages.create`, and the API rejects a
+        # Forward `temperature` only to models that accept sampling parameters.
+        # The adaptive-thinking Claude generation (Sonnet 4.6 onward) rejects a
         # non-default value with `400 "temperature is deprecated for this
-        # model."`. Forwarding it therefore only breaks the call, so we drop it
-        # and warn if the caller explicitly requested one.
+        # model."`, and newer `anthropic` clients removed `temperature` from the
+        # typed `beta.messages.create` (passing it as a keyword would crash).
+        # So, when accepted, send it in the request body via `extra_body`; when
+        # not, drop it and warn once per model.
+        extra_body: dict[str, Any] = {}
         if temperature is not None:
-            logger.warning(
-                "Ignoring temperature=%s: Anthropic has deprecated the "
-                "`temperature` parameter for its models, so it is not sent.",
-                temperature,
-            )
+            if accepts_sampling_params(model_id):
+                extra_body["temperature"] = temperature
+            elif model_id not in self._temperature_warned:
+                self._temperature_warned.add(model_id)
+                logger.warning(
+                    "Ignoring temperature=%s: model %s does not accept sampling "
+                    "parameters (Anthropic deprecated them for this model "
+                    "generation).",
+                    temperature,
+                    model_id,
+                )
+
+        create_kwargs: dict[str, Any] = {"extra_body": extra_body} if extra_body else {}
 
         response = self._client.beta.messages.create(  # type: ignore[misc]
             messages=_messages,
@@ -297,5 +311,6 @@ class AnthropicMessagesApi(MessagesApi):
             output_config=_output_config,
             tool_choice=_tool_choice,
             timeout=300.0,
+            **create_kwargs,
         )
         return MessageParam.model_validate(response.model_dump())

@@ -88,9 +88,11 @@ def test_sonnet_5_is_not_confused_with_sonnet_4_5() -> None:
     [
         ("claude-sonnet-4-5-20250929", True),  # legacy: sampling params fine
         ("claude-haiku-4-5", True),
-        ("claude-sonnet-4-6", True),  # 4.6 generation still accepts them
-        ("claude-opus-4-6", True),
-        ("claude-opus-4-7", False),  # removed from Opus 4.7 onward
+        # 4.6 adaptive generation onward rejects sampling params with a 400
+        # ("temperature is deprecated for this model.") - confirmed vs the API.
+        ("claude-sonnet-4-6", False),
+        ("claude-opus-4-6", False),
+        ("claude-opus-4-7", False),
         ("claude-opus-4-8", False),
         ("claude-sonnet-5", False),
         ("claude-fable-5", False),
@@ -119,20 +121,23 @@ def test_supports_disabled_thinking(model_id: str, expected: bool) -> None:
     assert supports_disabled_thinking(model_id) is expected
 
 
-def test_non_thinking_settings_keep_parity_on_older_models() -> None:
-    assert make_non_thinking_settings("claude-sonnet-4-6") == {
+def test_non_thinking_settings_keep_parity_on_legacy_models() -> None:
+    assert make_non_thinking_settings("claude-sonnet-4-5") == {
         "thinking": {"type": "disabled"},
         "temperature": 0.0,
     }
 
 
-def test_non_thinking_settings_drop_temperature_from_opus_4_7_on() -> None:
-    assert make_non_thinking_settings("claude-opus-4-8") == {
-        "thinking": {"type": "disabled"},
-    }
-    assert make_non_thinking_settings("anthropic/claude-sonnet-5") == {
-        "thinking": {"type": "disabled"},
-    }
+def test_non_thinking_settings_drop_temperature_from_adaptive_generation() -> None:
+    # 4.6 generation onward: adaptive thinking + no sampling params.
+    for model_id in (
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+        "anthropic/claude-sonnet-5",
+    ):
+        assert make_non_thinking_settings(model_id) == {
+            "thinking": {"type": "disabled"},
+        }
 
 
 def test_non_thinking_settings_omit_thinking_on_always_on_models() -> None:

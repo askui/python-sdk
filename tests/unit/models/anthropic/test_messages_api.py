@@ -135,61 +135,111 @@ class TestCreateMessage:
         assert kwargs["output_config"] is omit
         assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 2048}
 
-    def test_temperature_never_forwarded(self) -> None:
+    # A legacy budget-thinking model (accepts sampling) vs. an adaptive model
+    # (rejects sampling / deprecated temperature).
+    _SAMPLING_MODEL = "claude-sonnet-4-5"
+    _NO_SAMPLING_MODEL = "claude-sonnet-5"
+
+    def test_temperature_sent_via_extra_body_for_sampling_model(self) -> None:
         api, client = self._make_api()
 
-        for temperature in (None, 0.0, 0.5, 1.0):
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id=self._SAMPLING_MODEL,
+            temperature=0.3,
+        )
+
+        kwargs = client.beta.messages.create.call_args.kwargs
+        # Routed through the request body (never as the typed `temperature=`
+        # kwarg, which newer clients removed).
+        assert "temperature" not in kwargs
+        assert kwargs["extra_body"] == {"temperature": 0.3}
+
+    def test_temperature_zero_sent_for_sampling_model(self) -> None:
+        api, client = self._make_api()
+
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id=self._SAMPLING_MODEL,
+            temperature=0.0,
+        )
+
+        kwargs = client.beta.messages.create.call_args.kwargs
+        assert kwargs["extra_body"] == {"temperature": 0.0}
+
+    def test_temperature_dropped_for_non_sampling_model(self) -> None:
+        api, client = self._make_api()
+
+        for temperature in (0.0, 0.5, 1.0):
             api.create_message(
                 messages=[MessageParam(role="user", content="hi")],
-                model_id="claude-sonnet-5",
+                model_id=self._NO_SAMPLING_MODEL,
                 temperature=temperature,
             )
             kwargs = client.beta.messages.create.call_args.kwargs
-            # Anthropic deprecated `temperature`; the SDK never sends it, neither
-            # as a typed keyword nor in the request body.
             assert "temperature" not in kwargs
             assert "extra_body" not in kwargs
 
-    def test_warns_when_temperature_requested(self, caplog: Any) -> None:
-        api, _ = self._make_api()
+    def test_temperature_never_in_body_when_unset(self) -> None:
+        api, client = self._make_api()
 
-        import logging
-
-        with caplog.at_level(logging.WARNING):
-            api.create_message(
-                messages=[MessageParam(role="user", content="hi")],
-                model_id="claude-sonnet-5",
-                temperature=0.2,
-            )
-        assert any(
-            "deprecated" in rec.message and "0.2" in rec.message
-            for rec in caplog.records
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id=self._SAMPLING_MODEL,
         )
 
-    def test_no_warning_when_temperature_unset(self, caplog: Any) -> None:
+        kwargs = client.beta.messages.create.call_args.kwargs
+        assert "temperature" not in kwargs
+        assert "extra_body" not in kwargs
+
+    def test_warns_once_per_model_for_non_sampling_temperature(
+        self, caplog: Any
+    ) -> None:
+        import logging
+
         api, _ = self._make_api()
 
+        with caplog.at_level(logging.WARNING):
+            for _ in range(3):
+                api.create_message(
+                    messages=[MessageParam(role="user", content="hi")],
+                    model_id=self._NO_SAMPLING_MODEL,
+                    temperature=0.2,
+                )
+        warnings = [
+            rec for rec in caplog.records if "sampling parameters" in rec.message
+        ]
+        assert len(warnings) == 1  # once per model, not per call
+        assert self._NO_SAMPLING_MODEL in warnings[0].message
+
+    def test_no_warning_for_sampling_model_or_unset(self, caplog: Any) -> None:
         import logging
+
+        api, _ = self._make_api()
 
         with caplog.at_level(logging.WARNING):
             api.create_message(
                 messages=[MessageParam(role="user", content="hi")],
-                model_id="claude-sonnet-5",
+                model_id=self._SAMPLING_MODEL,
+                temperature=0.5,
             )
-        assert not any("temperature" in rec.message for rec in caplog.records)
+            api.create_message(
+                messages=[MessageParam(role="user", content="hi")],
+                model_id=self._NO_SAMPLING_MODEL,
+            )
+        assert not any("sampling parameters" in rec.message for rec in caplog.records)
 
     def test_kwargs_accepted_by_real_client_signature(self) -> None:
-        """Integration guard: every kwarg the SDK sends - with and without a
-        temperature - must be accepted by the REAL installed `anthropic` client's
-        `beta.messages.create` signature (bound with no network). This catches
-        the SDK forwarding a parameter the installed client version does not
-        support, on whatever anthropic CI resolves."""
+        """Integration guard: every kwarg the SDK sends - for a sampling model
+        (temperature in extra_body) and a non-sampling model (no temperature) -
+        must be accepted by the REAL installed `anthropic` client signature
+        (bound with no network). Catches the SDK forwarding an unsupported
+        parameter on whatever anthropic CI resolves."""
         real_client = anthropic.Anthropic(api_key="dummy")
         real_signature = inspect.signature(real_client.beta.messages.create)
 
         def spy(**kwargs: Any) -> MagicMock:
-            # Raises TypeError if the SDK sends an unsupported keyword.
-            real_signature.bind(**kwargs)
+            real_signature.bind(**kwargs)  # raises on an unsupported keyword
             response = MagicMock()
             response.model_dump.return_value = {"role": "assistant", "content": "hi"}
             return response
@@ -197,10 +247,11 @@ class TestCreateMessage:
         real_client.beta.messages.create = spy  # type: ignore[method-assign]
         api = AnthropicMessagesApi(client=real_client)
 
-        for temperature in (None, 0.0, 0.7):
-            result = api.create_message(
-                messages=[MessageParam(role="user", content="hi")],
-                model_id="claude-sonnet-5",
-                temperature=temperature,
-            )
-            assert isinstance(result, MessageParam)
+        for model_id in (self._SAMPLING_MODEL, self._NO_SAMPLING_MODEL):
+            for temperature in (None, 0.0, 0.7):
+                result = api.create_message(
+                    messages=[MessageParam(role="user", content="hi")],
+                    model_id=model_id,
+                    temperature=temperature,
+                )
+                assert isinstance(result, MessageParam)
