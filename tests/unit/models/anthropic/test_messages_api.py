@@ -85,7 +85,7 @@ class TestCreateMessage:
         assert kwargs["output_config"] is omit
         assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 2048}
 
-    def test_temperature_not_forwarded_when_unset(self) -> None:
+    def test_temperature_not_in_body_when_unset(self) -> None:
         api, client = self._make_api()
 
         api.create_message(
@@ -94,11 +94,11 @@ class TestCreateMessage:
         )
 
         kwargs = client.beta.messages.create.call_args.kwargs
-        # Not passed at all (not even as `omit`) so clients that dropped the
-        # parameter do not raise TypeError.
+        # Never sent as a typed keyword, and no temperature in the body.
         assert "temperature" not in kwargs
+        assert kwargs["extra_body"] is omit
 
-    def test_temperature_forwarded_when_set(self) -> None:
+    def test_temperature_sent_via_extra_body_when_set(self) -> None:
         api, client = self._make_api()
 
         api.create_message(
@@ -108,13 +108,27 @@ class TestCreateMessage:
         )
 
         kwargs = client.beta.messages.create.call_args.kwargs
-        assert kwargs["temperature"] == 0.3
+        # Routed through the request body (not the typed `temperature=` kwarg,
+        # which newer clients removed).
+        assert "temperature" not in kwargs
+        assert kwargs["extra_body"] == {"temperature": 0.3}
 
-    def test_succeeds_on_client_that_rejects_temperature(self) -> None:
-        """Regression: mirrors an anthropic client whose create() has no
-        `temperature` parameter (and no **kwargs). Passing `temperature` at all -
-        even as the `omit` sentinel - would raise TypeError, so the SDK must not
-        forward it when it is unset."""
+    def test_temperature_zero_sent_via_extra_body(self) -> None:
+        api, client = self._make_api()
+
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="claude-sonnet-5",
+            temperature=0.0,
+        )
+
+        kwargs = client.beta.messages.create.call_args.kwargs
+        assert kwargs["extra_body"] == {"temperature": 0.0}
+
+    def test_succeeds_on_client_that_rejects_temperature_kwarg(self) -> None:
+        """Regression: a client whose create() has no `temperature` parameter
+        (and no **kwargs) must not receive it as a keyword - even when a
+        temperature is requested. It goes into the request body instead."""
 
         def create(**kwargs: object) -> MagicMock:
             if "temperature" in kwargs:
@@ -131,16 +145,16 @@ class TestCreateMessage:
         result = api.create_message(
             messages=[MessageParam(role="user", content="hi")],
             model_id="claude-sonnet-5",
+            temperature=0.5,  # even when set, must not become a kwarg
         )
         assert isinstance(result, MessageParam)
 
     def test_kwargs_accepted_by_real_client_signature(self) -> None:
-        """Integration guard: every kwarg the SDK sends must be accepted by the
-        REAL installed `anthropic` client's `beta.messages.create` signature.
-
-        This binds against the real signature (no network), so it fails if the
-        SDK forwards a parameter the installed client version does not support -
-        catching this class of breakage on whatever anthropic CI resolves."""
+        """Integration guard: every kwarg the SDK sends - with and without a
+        temperature - must be accepted by the REAL installed `anthropic` client's
+        `beta.messages.create` signature (bound with no network). This catches
+        the SDK forwarding a parameter the installed client version does not
+        support, on whatever anthropic CI resolves."""
         real_client = anthropic.Anthropic(api_key="dummy")
         real_signature = inspect.signature(real_client.beta.messages.create)
 
@@ -154,8 +168,10 @@ class TestCreateMessage:
         real_client.beta.messages.create = spy  # type: ignore[method-assign]
         api = AnthropicMessagesApi(client=real_client)
 
-        result = api.create_message(
-            messages=[MessageParam(role="user", content="hi")],
-            model_id="claude-sonnet-5",
-        )
-        assert isinstance(result, MessageParam)
+        for temperature in (None, 0.0, 0.7):
+            result = api.create_message(
+                messages=[MessageParam(role="user", content="hi")],
+                model_id="claude-sonnet-5",
+                temperature=temperature,
+            )
+            assert isinstance(result, MessageParam)

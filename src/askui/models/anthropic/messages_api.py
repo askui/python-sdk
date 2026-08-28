@@ -269,18 +269,17 @@ class AnthropicMessagesApi(MessagesApi):
             temperature,
         )
 
-        # Only forward `temperature` when a value was actually requested. It is
-        # an optional sampling parameter that some `anthropic` client versions do
-        # not expose on `beta.messages.create` (and the client does not accept
-        # `**kwargs`), so passing it unconditionally - even as the `omit`
-        # sentinel - raises `TypeError` at argument binding on those clients.
-        # The other options remain passed as `omit`; they are still part of the
-        # client signature.
-        temperature_kwarg: dict[str, float] = {}
+        # `temperature` was removed from the typed `beta.messages.create`
+        # signature in newer `anthropic` clients (e.g. 1.2.0), which accept no
+        # `**kwargs` - so forwarding it as a normal keyword raises `TypeError` at
+        # argument binding. The Messages API itself still accepts `temperature`
+        # in the request body, so send it via `extra_body` (only when a value was
+        # actually requested). This works regardless of client version.
+        extra_body: dict[str, Any] = {}
         if not isinstance(_temperature, Omit):
-            temperature_kwarg["temperature"] = _temperature
+            extra_body["temperature"] = _temperature
 
-        response = self._client.beta.messages.create(  # type: ignore[misc, call-overload]
+        response = self._client.beta.messages.create(  # type: ignore[misc]
             messages=_messages,
             max_tokens=max_tokens or 8192,
             cache_control=_cache_control,
@@ -292,6 +291,6 @@ class AnthropicMessagesApi(MessagesApi):
             output_config=_output_config,
             tool_choice=_tool_choice,
             timeout=300.0,
-            **temperature_kwarg,
+            extra_body=extra_body or omit,
         )
         return MessageParam.model_validate(response.model_dump())
