@@ -1,7 +1,10 @@
 """Unit tests for Anthropic messages API output_config / thinking handling."""
 
+import inspect
+from typing import Any
 from unittest.mock import MagicMock
 
+import anthropic
 from anthropic import omit
 
 from askui.models.anthropic.messages_api import (
@@ -124,6 +127,32 @@ class TestCreateMessage:
         client = MagicMock()
         client.beta.messages.create = create
         api = AnthropicMessagesApi(client=client)
+
+        result = api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id="claude-sonnet-5",
+        )
+        assert isinstance(result, MessageParam)
+
+    def test_kwargs_accepted_by_real_client_signature(self) -> None:
+        """Integration guard: every kwarg the SDK sends must be accepted by the
+        REAL installed `anthropic` client's `beta.messages.create` signature.
+
+        This binds against the real signature (no network), so it fails if the
+        SDK forwards a parameter the installed client version does not support -
+        catching this class of breakage on whatever anthropic CI resolves."""
+        real_client = anthropic.Anthropic(api_key="dummy")
+        real_signature = inspect.signature(real_client.beta.messages.create)
+
+        def spy(**kwargs: Any) -> MagicMock:
+            # Raises TypeError if the SDK sends an unsupported keyword.
+            real_signature.bind(**kwargs)
+            response = MagicMock()
+            response.model_dump.return_value = {"role": "assistant", "content": "hi"}
+            return response
+
+        real_client.beta.messages.create = spy  # type: ignore[method-assign]
+        api = AnthropicMessagesApi(client=real_client)
 
         result = api.create_message(
             messages=[MessageParam(role="user", content="hi")],
