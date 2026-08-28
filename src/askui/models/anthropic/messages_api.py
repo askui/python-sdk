@@ -58,6 +58,16 @@ def _is_retryable_error(exception: BaseException) -> bool:
     return isinstance(exception, (APIConnectionError, APITimeoutError, APIError))
 
 
+def _is_adaptive_thinking(thinking: BetaThinkingConfigParam | Omit) -> bool:
+    """Whether *adaptive* thinking is enabled for this request.
+
+    The API rejects a non-default ``temperature`` while adaptive thinking is on
+    (fixed ``budget_tokens`` thinking is unaffected), so temperature is dropped
+    in that case.
+    """
+    return isinstance(thinking, dict) and thinking.get("type") == "adaptive"
+
+
 def from_content_block(block: ContentBlockParam) -> BetaContentBlockParam:
     """Convert an internal content block to an Anthropic API-compatible dict.
 
@@ -276,25 +286,32 @@ class AnthropicMessagesApi(MessagesApi):
             tool_choice,
         )
 
-        # Forward `temperature` only to models that accept sampling parameters.
-        # The adaptive-thinking Claude generation (Sonnet 4.6 onward) rejects a
-        # non-default value with `400 "temperature is deprecated for this
-        # model."`, and newer `anthropic` clients removed `temperature` from the
-        # typed `beta.messages.create` (passing it as a keyword would crash).
-        # So, when accepted, send it in the request body via `extra_body`; when
-        # not, drop it and warn once per model.
+        # Decide whether to forward `temperature`. The API rejects it (400) in
+        # two independent cases:
+        #   1. Models that deprecated sampling params entirely (Sonnet 5 / Opus
+        #      4.7 onward) - see `accepts_sampling_params`.
+        #   2. Any request with *adaptive* thinking enabled, where a non-default
+        #      temperature is rejected (budget thinking is fine).
+        # Newer `anthropic` clients also removed the typed `temperature` param,
+        # so when we do send it we route it through the request body via
+        # `extra_body`; otherwise we drop it and warn once per model.
         extra_body: dict[str, Any] = {}
         if temperature is not None:
-            if accepts_sampling_params(model_id):
+            adaptive = _is_adaptive_thinking(_thinking)
+            if accepts_sampling_params(model_id) and not adaptive:
                 extra_body["temperature"] = temperature
             elif model_id not in self._temperature_warned:
                 self._temperature_warned.add(model_id)
+                reason = (
+                    "adaptive thinking is enabled (temperature must be left unset)"
+                    if adaptive
+                    else "the model deprecated sampling parameters"
+                )
                 logger.warning(
-                    "Ignoring temperature=%s: model %s does not accept sampling "
-                    "parameters (Anthropic deprecated them for this model "
-                    "generation).",
+                    "Ignoring temperature=%s for model %s: %s.",
                     temperature,
                     model_id,
+                    reason,
                 )
 
         create_kwargs: dict[str, Any] = {"extra_body": extra_body} if extra_body else {}

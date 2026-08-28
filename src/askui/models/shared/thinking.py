@@ -54,13 +54,16 @@ _LEGACY_BUDGET_THINKING_MODEL_PREFIXES = (
     "claude-opus-4-5",
 )
 
-# Adaptive-thinking Claude models reject sampling parameters
-# (temperature/top_p/top_k) with a 400 - the API rejects a non-default value
-# with "temperature is deprecated for this model." (confirmed against both
-# direct Anthropic and Vertex for Sonnet 4.6). Only the legacy budget-thinking
-# generation still accepts them. This set is therefore empty and kept for
-# documentation / potential future exceptions.
-_SAMPLING_CAPABLE_ADAPTIVE_MODEL_PREFIXES: tuple[str, ...] = ()
+# The adaptive-thinking generation that still accepts sampling parameters
+# (temperature/top_p/top_k) when thinking is not adaptive. From Opus 4.7 /
+# Sonnet 5 / Fable 5 onward the API rejects sampling params outright with a 400.
+# (Note: even for these models, an explicit temperature is rejected while
+# *adaptive* thinking is enabled - that constraint is enforced separately, at
+# request time, not by this model classification.)
+_SAMPLING_CAPABLE_ADAPTIVE_MODEL_PREFIXES = (
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+)
 
 # Models where thinking is always on: an explicit {"type": "disabled"} is
 # rejected with a 400, so the thinking field must be omitted entirely.
@@ -110,11 +113,15 @@ def uses_adaptive_thinking(model_id: str) -> bool:
 def accepts_sampling_params(model_id: str) -> bool:
     """Whether the model accepts sampling parameters such as ``temperature``.
 
-    False for adaptive-thinking Claude models (the 4.6 generation onward -
-    Sonnet 4.6, Opus 4.6/4.7/4.8, Sonnet 5, Fable 5, and future models), which
-    reject a non-default value with a 400. True for the legacy budget-thinking
-    Claude models (Sonnet 4/4.5, Opus 4.1/4.5, Haiku 4.5, ...) and for
-    non-Claude model IDs (other providers manage their own sampling params).
+    False for adaptive-thinking Claude models newer than the 4.6 generation
+    (Opus 4.7/4.8, Sonnet 5, Fable 5, and future models), which reject them
+    with a 400. True for older Claude models and non-Claude model IDs (other
+    providers manage their own sampling parameters).
+
+    Note: this is a *model-level* capability. Sonnet 4.6 / Opus 4.6 accept
+    ``temperature`` in general, but the API still rejects it while *adaptive*
+    thinking is enabled - that request-level rule is enforced in the messages
+    API, not here.
 
     Args:
         model_id (str): The model identifier (bare or gateway-prefixed).

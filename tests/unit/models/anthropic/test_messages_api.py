@@ -135,10 +135,12 @@ class TestCreateMessage:
         assert kwargs["output_config"] is omit
         assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 2048}
 
-    # A legacy budget-thinking model (accepts sampling) vs. an adaptive model
-    # (rejects sampling / deprecated temperature).
-    _SAMPLING_MODEL = "claude-sonnet-4-5"
+    # A model that accepts sampling params (Sonnet 4.6 - accepts temperature when
+    # thinking is not adaptive) vs. one that deprecated them (Sonnet 5).
+    _SAMPLING_MODEL = "claude-sonnet-4-6"
     _NO_SAMPLING_MODEL = "claude-sonnet-5"
+    _ADAPTIVE_THINKING = {"type": "adaptive"}
+    _BUDGET_THINKING = {"type": "enabled", "budget_tokens": 2048}
 
     def test_temperature_sent_via_extra_body_for_sampling_model(self) -> None:
         api, client = self._make_api()
@@ -179,6 +181,35 @@ class TestCreateMessage:
             kwargs = client.beta.messages.create.call_args.kwargs
             assert "temperature" not in kwargs
             assert "extra_body" not in kwargs
+
+    def test_temperature_sent_with_budget_thinking(self) -> None:
+        # Fixed budget_tokens thinking is compatible with temperature.
+        api, client = self._make_api()
+
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id=self._SAMPLING_MODEL,
+            thinking=self._BUDGET_THINKING,
+            temperature=0.3,
+        )
+
+        kwargs = client.beta.messages.create.call_args.kwargs
+        assert kwargs["extra_body"] == {"temperature": 0.3}
+
+    def test_temperature_dropped_with_adaptive_thinking(self) -> None:
+        # Adaptive thinking rejects a non-default temperature -> drop it.
+        api, client = self._make_api()
+
+        api.create_message(
+            messages=[MessageParam(role="user", content="hi")],
+            model_id=self._SAMPLING_MODEL,
+            thinking=self._ADAPTIVE_THINKING,
+            temperature=0.3,
+        )
+
+        kwargs = client.beta.messages.create.call_args.kwargs
+        assert "temperature" not in kwargs
+        assert "extra_body" not in kwargs
 
     def test_temperature_never_in_body_when_unset(self) -> None:
         api, client = self._make_api()
