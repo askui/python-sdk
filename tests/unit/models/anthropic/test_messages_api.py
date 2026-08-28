@@ -29,19 +29,6 @@ class TestParseToAnthropicTypes:
         result = _parse_to_anthropic_types(tools=None, thinking={"type": "adaptive"})
         assert result[4] == {"type": "adaptive"}
 
-    def test_no_temperature_is_omitted(self) -> None:
-        result = _parse_to_anthropic_types(tools=None, temperature=None)
-        assert result[7] is omit
-
-    def test_temperature_passed_through(self) -> None:
-        result = _parse_to_anthropic_types(tools=None, temperature=0.7)
-        assert result[7] == 0.7
-
-    def test_temperature_zero_is_preserved(self) -> None:
-        # 0.0 is a valid deterministic value and must not be treated as unset.
-        result = _parse_to_anthropic_types(tools=None, temperature=0.0)
-        assert result[7] == 0.0
-
 
 class TestCreateMessage:
     """`create_message` reads output_config from provider_options."""
@@ -85,69 +72,48 @@ class TestCreateMessage:
         assert kwargs["output_config"] is omit
         assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 2048}
 
-    def test_temperature_not_in_body_when_unset(self) -> None:
+    def test_temperature_never_forwarded(self) -> None:
         api, client = self._make_api()
 
-        api.create_message(
-            messages=[MessageParam(role="user", content="hi")],
-            model_id="claude-sonnet-5",
+        for temperature in (None, 0.0, 0.5, 1.0):
+            api.create_message(
+                messages=[MessageParam(role="user", content="hi")],
+                model_id="claude-sonnet-5",
+                temperature=temperature,
+            )
+            kwargs = client.beta.messages.create.call_args.kwargs
+            # Anthropic deprecated `temperature`; the SDK never sends it, neither
+            # as a typed keyword nor in the request body.
+            assert "temperature" not in kwargs
+            assert "extra_body" not in kwargs
+
+    def test_warns_when_temperature_requested(self, caplog: Any) -> None:
+        api, _ = self._make_api()
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            api.create_message(
+                messages=[MessageParam(role="user", content="hi")],
+                model_id="claude-sonnet-5",
+                temperature=0.2,
+            )
+        assert any(
+            "deprecated" in rec.message and "0.2" in rec.message
+            for rec in caplog.records
         )
 
-        kwargs = client.beta.messages.create.call_args.kwargs
-        # Never sent as a typed keyword, and no temperature in the body.
-        assert "temperature" not in kwargs
-        assert kwargs["extra_body"] is omit
+    def test_no_warning_when_temperature_unset(self, caplog: Any) -> None:
+        api, _ = self._make_api()
 
-    def test_temperature_sent_via_extra_body_when_set(self) -> None:
-        api, client = self._make_api()
+        import logging
 
-        api.create_message(
-            messages=[MessageParam(role="user", content="hi")],
-            model_id="claude-sonnet-5",
-            temperature=0.3,
-        )
-
-        kwargs = client.beta.messages.create.call_args.kwargs
-        # Routed through the request body (not the typed `temperature=` kwarg,
-        # which newer clients removed).
-        assert "temperature" not in kwargs
-        assert kwargs["extra_body"] == {"temperature": 0.3}
-
-    def test_temperature_zero_sent_via_extra_body(self) -> None:
-        api, client = self._make_api()
-
-        api.create_message(
-            messages=[MessageParam(role="user", content="hi")],
-            model_id="claude-sonnet-5",
-            temperature=0.0,
-        )
-
-        kwargs = client.beta.messages.create.call_args.kwargs
-        assert kwargs["extra_body"] == {"temperature": 0.0}
-
-    def test_succeeds_on_client_that_rejects_temperature_kwarg(self) -> None:
-        """Regression: a client whose create() has no `temperature` parameter
-        (and no **kwargs) must not receive it as a keyword - even when a
-        temperature is requested. It goes into the request body instead."""
-
-        def create(**kwargs: object) -> MagicMock:
-            if "temperature" in kwargs:
-                error_msg = "create() got an unexpected keyword argument 'temperature'"
-                raise TypeError(error_msg)
-            response = MagicMock()
-            response.model_dump.return_value = {"role": "assistant", "content": "hi"}
-            return response
-
-        client = MagicMock()
-        client.beta.messages.create = create
-        api = AnthropicMessagesApi(client=client)
-
-        result = api.create_message(
-            messages=[MessageParam(role="user", content="hi")],
-            model_id="claude-sonnet-5",
-            temperature=0.5,  # even when set, must not become a kwarg
-        )
-        assert isinstance(result, MessageParam)
+        with caplog.at_level(logging.WARNING):
+            api.create_message(
+                messages=[MessageParam(role="user", content="hi")],
+                model_id="claude-sonnet-5",
+            )
+        assert not any("temperature" in rec.message for rec in caplog.records)
 
     def test_kwargs_accepted_by_real_client_signature(self) -> None:
         """Integration guard: every kwarg the SDK sends - with and without a

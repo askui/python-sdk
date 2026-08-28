@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Tuple, cast
 
 from anthropic import (
@@ -45,6 +46,8 @@ from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.image_utils import image_to_base64
 from askui.utils.pdf_utils import PdfSource
+
+logger = logging.getLogger(__name__)
 
 
 def _is_retryable_error(exception: BaseException) -> bool:
@@ -147,7 +150,6 @@ def _parse_to_anthropic_types(
     thinking: ThinkingConfigParam | None = None,
     output_config: dict[str, Any] | None = None,
     tool_choice: ToolChoiceParam | None = None,
-    temperature: float | None = None,
 ) -> Tuple[
     list[BetaToolUnionParam] | Omit,
     list[AnthropicBetaParam] | Omit,
@@ -156,7 +158,6 @@ def _parse_to_anthropic_types(
     BetaThinkingConfigParam | Omit,
     BetaOutputConfigParam | Omit,
     BetaToolChoiceParam | Omit,
-    float | Omit,
 ]:
     """Convert provider-agnostic types to Anthropic-specific types.
 
@@ -193,9 +194,6 @@ def _parse_to_anthropic_types(
     _tool_choice = (
         cast("BetaToolChoiceParam", tool_choice) if tool_choice is not None else omit
     )
-    # Use `is None` (not truthiness) so an explicit `temperature=0.0`
-    # (fully deterministic) is preserved rather than dropped.
-    _temperature: float | Omit = omit if temperature is None else temperature
 
     return (
         _tools,
@@ -205,7 +203,6 @@ def _parse_to_anthropic_types(
         _thinking,
         _output_config,
         _tool_choice,
-        _temperature,
     )
 
 
@@ -257,7 +254,6 @@ class AnthropicMessagesApi(MessagesApi):
             _thinking,
             _output_config,
             _tool_choice,
-            _temperature,
         ) = _parse_to_anthropic_types(
             tools,
             betas,
@@ -266,18 +262,20 @@ class AnthropicMessagesApi(MessagesApi):
             thinking,
             output_config,
             tool_choice,
-            temperature,
         )
 
-        # `temperature` was removed from the typed `beta.messages.create`
-        # signature in newer `anthropic` clients (e.g. 1.2.0), which accept no
-        # `**kwargs` - so forwarding it as a normal keyword raises `TypeError` at
-        # argument binding. The Messages API itself still accepts `temperature`
-        # in the request body, so send it via `extra_body` (only when a value was
-        # actually requested). This works regardless of client version.
-        extra_body: dict[str, Any] = {}
-        if not isinstance(_temperature, Omit):
-            extra_body["temperature"] = _temperature
+        # `temperature` is intentionally NOT forwarded to the Anthropic Messages
+        # API. Anthropic has deprecated it for its models: newer `anthropic`
+        # clients removed it from `beta.messages.create`, and the API rejects a
+        # non-default value with `400 "temperature is deprecated for this
+        # model."`. Forwarding it therefore only breaks the call, so we drop it
+        # and warn if the caller explicitly requested one.
+        if temperature is not None:
+            logger.warning(
+                "Ignoring temperature=%s: Anthropic has deprecated the "
+                "`temperature` parameter for its models, so it is not sent.",
+                temperature,
+            )
 
         response = self._client.beta.messages.create(  # type: ignore[misc]
             messages=_messages,
@@ -291,6 +289,5 @@ class AnthropicMessagesApi(MessagesApi):
             output_config=_output_config,
             tool_choice=_tool_choice,
             timeout=300.0,
-            extra_body=extra_body or omit,
         )
         return MessageParam.model_validate(response.model_dump())
