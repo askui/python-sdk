@@ -60,9 +60,14 @@ def _is_retryable_error(exception: BaseException) -> bool:
 def from_content_block(block: ContentBlockParam) -> BetaContentBlockParam:
     """Convert an internal content block to an Anthropic API-compatible dict.
 
-    Uses `model_dump()` to produce plain dicts compatible with Anthropic's
-    TypedDicts. Strips ``visual_representation`` and ``extra_content`` from
-    `ToolUseBlockParam` as they are not accepted by the API.
+    Uses `model_dump(exclude_none=True)` to produce plain dicts compatible with
+    Anthropic's TypedDicts. ``exclude_none`` omits unset optional fields (e.g.
+    ``cache_control``, ``citations``) instead of serialising them as explicit
+    ``null``. The Anthropic API tolerates those nulls, but stricter
+    Anthropic-compatible endpoints (e.g. OpenRouter's) reject them with
+    ``cache_control: expected object, received null``. Also strips
+    ``visual_representation`` and ``extra_content`` from `ToolUseBlockParam` as
+    they are not accepted by the API.
     """
     if isinstance(block, ToolUseBlockParam):
         # visual_representation (perceptual hash for cache validation) and
@@ -72,9 +77,12 @@ def from_content_block(block: ContentBlockParam) -> BetaContentBlockParam:
         # unknown-field error.
         return cast(
             "BetaContentBlockParam",
-            block.model_dump(exclude={"visual_representation", "extra_content"}),
+            block.model_dump(
+                exclude={"visual_representation", "extra_content"},
+                exclude_none=True,
+            ),
         )
-    return cast("BetaContentBlockParam", block.model_dump())
+    return cast("BetaContentBlockParam", block.model_dump(exclude_none=True))
 
 
 def from_message_param(message: MessageParam) -> BetaMessageParam:
