@@ -5,7 +5,7 @@
 groups = ["default", "all", "bedrock", "dev", "office-document", "otel", "vertex", "web"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:156da503bb3b6d055b873aca6b997b6e62cb1b42bf9ccb17ade899bb0d8c6052"
+content_hash = "sha256:238adac982e7ce1a5e94921efaea67fb9c397102bd0da26158dea57110ef3887"
 
 [[metadata.targets]]
 requires_python = ">=3.10,<3.14"
@@ -51,56 +51,55 @@ files = [
 
 [[package]]
 name = "anthropic"
-version = "0.116.0"
-requires_python = ">=3.9"
+version = "1.2.0"
+requires_python = ">=3.10"
 summary = "The official Python library for the anthropic API"
 groups = ["default", "all", "bedrock", "vertex"]
 dependencies = [
     "anyio<5,>=3.5.0",
-    "distro<2,>=1.7.0",
     "docstring-parser<1,>=0.15",
-    "httpx<1,>=0.25.0",
+    "httpx2<3,>=2.0.0",
     "jiter<1,>=0.4.0",
     "pydantic<3,>=1.9.0",
-    "sniffio",
+    "sniffio<2,>=1",
     "typing-extensions<5,>=4.14",
 ]
 files = [
-    {file = "anthropic-0.116.0-py3-none-any.whl", hash = "sha256:6c0a7698e8d652455da3499978279bb2588c7264d0a35be3666009a4258c8256"},
-    {file = "anthropic-0.116.0.tar.gz", hash = "sha256:5fc248fbb9fe03ef686f8a774f81586bca31a043260aab88b387ea3660f4a396"},
+    {file = "anthropic-1.2.0-py3-none-any.whl", hash = "sha256:b60642b3e3cd6b8e3e328a2d3f2863ad2b6e743f1037e42cc0143f7df99f63c6"},
+    {file = "anthropic-1.2.0.tar.gz", hash = "sha256:12f8eedee7b7fb5685837b1371b7bfae1b281703f62355f4632598ec2fc53b34"},
 ]
 
 [[package]]
 name = "anthropic"
-version = "0.116.0"
+version = "1.2.0"
 extras = ["bedrock"]
-requires_python = ">=3.9"
+requires_python = ">=3.10"
 summary = "The official Python library for the anthropic API"
 groups = ["all", "bedrock"]
 dependencies = [
-    "anthropic==0.116.0",
-    "boto3>=1.28.57",
-    "botocore>=1.31.57",
+    "anthropic==1.2.0",
+    "boto3<2,>=1.28.57",
+    "botocore<2,>=1.31.57",
 ]
 files = [
-    {file = "anthropic-0.116.0-py3-none-any.whl", hash = "sha256:6c0a7698e8d652455da3499978279bb2588c7264d0a35be3666009a4258c8256"},
-    {file = "anthropic-0.116.0.tar.gz", hash = "sha256:5fc248fbb9fe03ef686f8a774f81586bca31a043260aab88b387ea3660f4a396"},
+    {file = "anthropic-1.2.0-py3-none-any.whl", hash = "sha256:b60642b3e3cd6b8e3e328a2d3f2863ad2b6e743f1037e42cc0143f7df99f63c6"},
+    {file = "anthropic-1.2.0.tar.gz", hash = "sha256:12f8eedee7b7fb5685837b1371b7bfae1b281703f62355f4632598ec2fc53b34"},
 ]
 
 [[package]]
 name = "anthropic"
-version = "0.116.0"
+version = "1.2.0"
 extras = ["vertex"]
-requires_python = ">=3.9"
+requires_python = ">=3.10"
 summary = "The official Python library for the anthropic API"
 groups = ["all", "vertex"]
 dependencies = [
-    "anthropic==0.116.0",
+    "anthropic==1.2.0",
     "google-auth[requests]<3,>=2",
 ]
 files = [
-    {file = "anthropic-0.116.0-py3-none-any.whl", hash = "sha256:6c0a7698e8d652455da3499978279bb2588c7264d0a35be3666009a4258c8256"},
-    {file = "anthropic-0.116.0.tar.gz", hash = "sha256:5fc248fbb9fe03ef686f8a774f81586bca31a043260aab88b387ea3660f4a396"},
+    {file = "anthropic-1.2.0-py3-none-any.whl", hash = "sha256:b60642b3e3cd6b8e3e328a2d3f2863ad2b6e743f1037e42cc0143f7df99f63c6"},
+    {file = "anthropic-1.2.0.tar.gz", hash = "sha256:12f8eedee7b7fb5685837b1371b7bfae1b281703f62355f4632598ec2fc53b34"},
 ]
 
 [[package]]
@@ -437,7 +436,7 @@ name = "certifi"
 version = "2026.6.17"
 requires_python = ">=3.7"
 summary = "Python package for providing Mozilla's CA Bundle."
-groups = ["default", "all", "bedrock", "office-document", "otel", "vertex"]
+groups = ["default", "all", "office-document", "otel", "vertex"]
 files = [
     {file = "certifi-2026.6.17-py3-none-any.whl", hash = "sha256:2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db"},
     {file = "certifi-2026.6.17.tar.gz", hash = "sha256:024c88eeec92ca068db80f02b8b07c9cef7b9fe261d1d535abfd5abd6f6af432"},
@@ -948,7 +947,7 @@ name = "distro"
 version = "1.9.0"
 requires_python = ">=3.6"
 summary = "Distro - an OS platform information API"
-groups = ["default", "all", "bedrock", "vertex"]
+groups = ["default", "all", "vertex"]
 files = [
     {file = "distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2"},
     {file = "distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed"},
@@ -1751,7 +1750,7 @@ name = "httpcore"
 version = "1.0.9"
 requires_python = ">=3.8"
 summary = "A minimal low-level HTTP client."
-groups = ["default", "all", "bedrock", "vertex"]
+groups = ["default", "all", "vertex"]
 dependencies = [
     "certifi",
     "h11>=0.16",
@@ -1762,11 +1761,27 @@ files = [
 ]
 
 [[package]]
+name = "httpcore2"
+version = "2.12.0"
+requires_python = ">=3.10"
+summary = "A minimal low-level HTTP client."
+groups = ["default", "all", "bedrock", "vertex"]
+marker = "sys_platform != \"emscripten\""
+dependencies = [
+    "h11>=0.16",
+    "truststore>=0.10",
+]
+files = [
+    {file = "httpcore2-2.12.0-py3-none-any.whl", hash = "sha256:7e04258ce01013d7d615e5b910a3b27fac937d7a95038227e79652b4ba3b4ceb"},
+    {file = "httpcore2-2.12.0.tar.gz", hash = "sha256:9293522bba0aa7c4c8e9e3f040c16575bd8868e155a77fa30c7a9085a5eae648"},
+]
+
+[[package]]
 name = "httpx"
 version = "0.28.1"
 requires_python = ">=3.8"
 summary = "The next generation HTTP client."
-groups = ["default", "all", "bedrock", "vertex"]
+groups = ["default", "all", "vertex"]
 dependencies = [
     "anyio",
     "certifi",
@@ -1787,6 +1802,37 @@ groups = ["default"]
 files = [
     {file = "httpx_sse-0.4.3-py3-none-any.whl", hash = "sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc"},
     {file = "httpx_sse-0.4.3.tar.gz", hash = "sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d"},
+]
+
+[[package]]
+name = "httpx2"
+version = "2.12.0"
+requires_python = ">=3.10"
+summary = "The next generation HTTP client."
+groups = ["default", "all", "bedrock", "vertex"]
+dependencies = [
+    "anyio>=4.10; sys_platform != \"emscripten\"",
+    "httpcore2==2.12.0; sys_platform != \"emscripten\"",
+    "httpx2-jsfetch; sys_platform == \"emscripten\" and python_version >= \"3.12\"",
+    "idna>=3.18",
+    "truststore>=0.10; sys_platform != \"emscripten\"",
+    "typing-extensions>=4.5.0; python_version < \"3.13\"",
+]
+files = [
+    {file = "httpx2-2.12.0-py3-none-any.whl", hash = "sha256:cc8b6eecb8661c146b8f89a60e97456ee086e91a784ed31ac450c3a9e613dd36"},
+    {file = "httpx2-2.12.0.tar.gz", hash = "sha256:7631fe9887a8a2275f4a2540e053aa670fcc50742864a9ae7c66e609fdcf12cf"},
+]
+
+[[package]]
+name = "httpx2-jsfetch"
+version = "1.0"
+requires_python = ">=3.12"
+summary = "httpx2 transports for Emscripten/Pyodide, backed by the JavaScript fetch API."
+groups = ["default", "all", "bedrock", "vertex"]
+marker = "sys_platform == \"emscripten\" and python_version >= \"3.12\""
+files = [
+    {file = "httpx2_jsfetch-1.0-py3-none-any.whl", hash = "sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32"},
+    {file = "httpx2_jsfetch-1.0.tar.gz", hash = "sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60"},
 ]
 
 [[package]]
@@ -4322,6 +4368,18 @@ dependencies = [
 files = [
     {file = "tqdm-4.68.3-py3-none-any.whl", hash = "sha256:39832cc2def2789a6f29df83f172db7416cea70052c0907a57801c5f2fdccb03"},
     {file = "tqdm-4.68.3.tar.gz", hash = "sha256:00dfa48452b6b6cfae3dd9885636c23d3422d1ec97c66d96818cbd5e0821d482"},
+]
+
+[[package]]
+name = "truststore"
+version = "0.10.4"
+requires_python = ">=3.10"
+summary = "Verify certificates using native system trust stores"
+groups = ["default", "all", "bedrock", "vertex"]
+marker = "sys_platform != \"emscripten\""
+files = [
+    {file = "truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981"},
+    {file = "truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301"},
 ]
 
 [[package]]

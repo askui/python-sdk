@@ -6,7 +6,7 @@ authors = [
 ]
 dependencies = [
     "askui-agent-os>=26.6.1",
-    "anthropic>=0.86.0",
+    "anthropic>=1,<2",  # messages API targets the 1.x client (routes temperature via extra_body; 1.x removed the typed kwarg). <2 so the next major can't silently break us again
     "fastapi>=0.115.12",
     "fastmcp>=2.3.0",
     "gradio-client>=1.4.3",
@@ -213,7 +213,7 @@ office-document = [
     "markitdown[xls,xlsx,docx]>=0.1.2"
 ]
 bedrock = [
-    "anthropic[bedrock]>=0.72.0"
+    "anthropic[bedrock]>=1,<2"
 ]
 otel = [
     "opentelemetry-api>=1.38.0",
@@ -222,7 +222,7 @@ otel = [
 ]
 vertex = [
     "google-cloud-aiplatform>=1.122.0",
-    "anthropic[vertex]>=0.72.0",
+    "anthropic[vertex]>=1,<2",
 ]
 web = [
     "playwright>=1.41.0",
