@@ -436,7 +436,7 @@ class PpadbAgentOs(AndroidAgentOs):
         devices: list[AndroidDevice] = self._get_connected_devices()
 
         if not self._device:
-            msg = "No device is selected, did you call on of the set_device methods?"
+            msg = "No device is selected, did you call one of the set_device methods?"
             raise AndroidAgentOsError(msg)
 
         for device in devices:
@@ -447,7 +447,7 @@ class PpadbAgentOs(AndroidAgentOs):
 
     def _check_if_display_is_selected(self) -> None:
         if self._selected_display is None:
-            msg = "No display is selected, did you call on of  the set_display methods?"
+            msg = "No display is selected, did you call one of the set_display methods?"
             raise AndroidAgentOsError(msg)
 
     def _get_connected_devices(self) -> list[AndroidDevice]:
