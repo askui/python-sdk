@@ -5,7 +5,7 @@
 groups = ["default", "all", "bedrock", "dev", "office-document", "otel", "vertex", "web"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:156da503bb3b6d055b873aca6b997b6e62cb1b42bf9ccb17ade899bb0d8c6052"
+content_hash = "sha256:45cd1d1a4c6c7b2a02b08ccd9938cdd7fa6637f509e498ff80e0e887da89111a"
 
 [[metadata.targets]]
 requires_python = ">=3.10,<3.14"
