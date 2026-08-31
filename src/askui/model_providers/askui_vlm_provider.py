@@ -65,6 +65,26 @@ def _infer_backend(model_id: str) -> _Backend:
     raise ValueError(error_msg)
 
 
+def _with_google_thinking(
+    provider_options: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Ask Gemini (Vertex's OpenAI-compatible endpoint) for its thought summary.
+
+    Sets ``extra_body.google.thinking_config.include_thoughts`` so the summary
+    comes back (inline ``<think>`` tags / ``reasoning_content``, surfaced as a
+    thinking block). Vertex rejects ``reasoning_effort`` and a custom
+    ``thinking_config`` in the same request ("found both", 400), so only the
+    latter is sent. Caller-supplied options win — an existing ``extra_body`` is
+    left untouched.
+    """
+    options = dict(provider_options) if provider_options else {}
+    options.setdefault(
+        "extra_body",
+        {"google": {"thinking_config": {"include_thoughts": True}}},
+    )
+    return options
+
+
 class AskUIVlmProvider(VlmProvider):
     """VLM provider that routes requests through AskUI's hosted model proxies.
 
@@ -228,6 +248,8 @@ class AskUIVlmProvider(VlmProvider):
     ) -> MessageParam:
         if system is not None:
             system = self.augment_system_prompt(system)
+        if self._backend is _Backend.GOOGLE:
+            provider_options = _with_google_thinking(provider_options)
         result: MessageParam = self._messages_api.create_message(
             messages=messages,
             model_id=self._model_id_value,

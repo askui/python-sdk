@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -273,6 +274,37 @@ def _parse_tool_calls(
         )
 
 
+_THINK_TAG_PATTERN = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _split_inline_thinking(content: str) -> tuple[str | None, str | None]:
+    """Split ``<think>…</think>`` reasoning out of an inline content string.
+
+    Gemini via Vertex's OpenAI-compatible endpoint returns its thought summary
+    inline in ``content`` wrapped in ``<think>`` tags rather than in a separate
+    ``reasoning_content`` field. Returns ``(thinking, text)`` — either may be
+    ``None`` (no tags found → ``(None, content)``; nothing but tags → text is
+    ``None``).
+    """
+    matches = _THINK_TAG_PATTERN.findall(content)
+    if not matches:
+        return None, content
+    thinking = "\n".join(m.strip() for m in matches)
+    text = _THINK_TAG_PATTERN.sub("", content).strip()
+    return (thinking or None), (text or None)
+
+
+def _extract_reasoning(message: ChatCompletionMessage) -> str | None:
+    """Read a model's reasoning summary from the non-standard response fields.
+
+    OpenAI-compatible reasoning models return it in ``reasoning_content``
+    (Vertex/DeepSeek) or ``reasoning`` (OpenRouter); both land in ``model_extra``.
+    """
+    extra = message.model_extra or {}
+    raw = extra.get("reasoning_content") or extra.get("reasoning")
+    return raw if isinstance(raw, str) and raw else None
+
+
 def _from_openai_response(response: ChatCompletion) -> MessageParam:
     """Convert an OpenAI ``ChatCompletion`` to an internal `MessageParam`."""
     choice = response.choices[0]
@@ -281,8 +313,23 @@ def _from_openai_response(response: ChatCompletion) -> MessageParam:
 
     content_blocks: list[ContentBlockParam] = []
 
+    # Reasoning can arrive either in a dedicated field (`reasoning_content` /
+    # `reasoning`) or inline in `content` wrapped in `<think>` tags (Gemini via
+    # the Vertex OpenAI-compatible endpoint). Surface either as a thinking block
+    # ahead of the spoken text so it reads as the model's private reasoning.
+    field_reasoning = _extract_reasoning(message)
+    inline_reasoning: str | None = None
+    answer_text: str | None = None
     if message.content:
-        content_blocks.append(TextBlockParam(text=message.content))
+        inline_reasoning, answer_text = _split_inline_thinking(message.content)
+
+    reasoning = field_reasoning or inline_reasoning
+    if reasoning:
+        content_blocks.append(
+            BetaThinkingBlock(signature="", thinking=reasoning, type="thinking")
+        )
+    if answer_text:
+        content_blocks.append(TextBlockParam(text=answer_text))
 
     _parse_tool_calls(message, content_blocks)
 

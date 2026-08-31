@@ -6,7 +6,10 @@ import pytest
 from anthropic import Anthropic
 from openai import OpenAI
 
-from askui.model_providers.askui_vlm_provider import AskUIVlmProvider
+from askui.model_providers.askui_vlm_provider import (
+    AskUIVlmProvider,
+    _with_google_thinking,
+)
 from askui.models.anthropic.messages_api import AnthropicMessagesApi
 from askui.models.askui.inference_api_settings import AskUiInferenceApiSettings
 from askui.models.openai.messages_api import OpenAIMessagesApi
@@ -149,3 +152,48 @@ class TestAskUIVlmProviderCoordinateSpace:
         assert provider.coordinate_space == ScaledCoordinateSpace(
             width=1000, height=1000
         )
+
+
+class TestWithGoogleThinking:
+    def test_injects_include_thoughts_when_absent(self) -> None:
+        options = _with_google_thinking(None)
+        assert options == {
+            "extra_body": {"google": {"thinking_config": {"include_thoughts": True}}}
+        }
+
+    def test_preserves_other_provider_options(self) -> None:
+        options = _with_google_thinking({"temperature": 0.2})
+        assert options["temperature"] == 0.2
+        assert options["extra_body"]["google"]["thinking_config"]["include_thoughts"]
+
+    def test_caller_extra_body_wins(self) -> None:
+        caller = {"extra_body": {"google": {"foo": "bar"}}}
+        options = _with_google_thinking(caller)
+        assert options["extra_body"] == {"google": {"foo": "bar"}}
+
+
+class TestAskUIVlmProviderThinkingRequest:
+    def test_gemini_requests_thoughts(
+        self, askui_settings: AskUiInferenceApiSettings
+    ) -> None:
+        provider = AskUIVlmProvider(
+            askui_settings=askui_settings,
+            model_id="gemini-2.5-pro",
+        )
+        stub = MagicMock()
+        provider.__dict__["_messages_api"] = stub
+        provider.create_message(messages=[])
+        forwarded = stub.create_message.call_args.kwargs["provider_options"]
+        assert forwarded["extra_body"]["google"]["thinking_config"]["include_thoughts"]
+
+    def test_claude_does_not_request_thoughts(
+        self, askui_settings: AskUiInferenceApiSettings
+    ) -> None:
+        provider = AskUIVlmProvider(
+            askui_settings=askui_settings,
+            model_id="claude-sonnet-4-6",
+        )
+        stub = MagicMock()
+        provider.__dict__["_messages_api"] = stub
+        provider.create_message(messages=[])
+        assert stub.create_message.call_args.kwargs["provider_options"] is None
