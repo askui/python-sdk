@@ -24,9 +24,9 @@ jobs:
         with:
           export-env: true
         env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SOLUTIONS_ENGINEER_SERVICE_ACCOUNT_TOKEN }}
-          DT_API_KEY: "op://github-ci-solutions-engineer-team/DependencyTrack-API-KEY/API-KEY"
-          DT_SERVER_URL: "op://github-ci-solutions-engineer-team/DependencyTrack-API-KEY/SERVER-URL"
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          DT_API_KEY: "op://plat-sbom/dependency-track/API-KEY"
+          DT_SERVER_URL: "op://plat-sbom/dependency-track/SERVER-URL"
 
       - uses: pdm-project/setup-pdm@v4
         with:
