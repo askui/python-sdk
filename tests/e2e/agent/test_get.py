@@ -65,24 +65,17 @@ class BrowserContextResponse(ResponseSchemaBase):
         pytest.param(None, id="default"),
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
         ),
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="gemini_flash",
-        ),
-        pytest.param(
-            AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__PRO,
-                inference_api_settings=AskUiInferenceApiSettings(),
-            ),
-            id="gemini_pro",
         ),
         pytest.param(
             AnthropicGetModel(
@@ -126,17 +119,10 @@ def test_get(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="gemini_flash",
-        ),
-        pytest.param(
-            AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__PRO,
-                inference_api_settings=AskUiInferenceApiSettings(),
-            ),
-            id="gemini_pro",
         ),
     ],
 )
@@ -163,17 +149,10 @@ def test_get_with_pdf_with_gemini_model(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="gemini_flash",
-        ),
-        pytest.param(
-            AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__PRO,
-                inference_api_settings=AskUiInferenceApiSettings(),
-            ),
-            id="gemini_pro",
         ),
     ],
 )
@@ -214,17 +193,10 @@ def test_get_with_pdf_too_large_with_default_model(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="gemini_flash",
-        ),
-        pytest.param(
-            AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__PRO,
-                inference_api_settings=AskUiInferenceApiSettings(),
-            ),
-            id="gemini_pro",
         ),
     ],
 )
@@ -260,17 +232,10 @@ class SalaryResponse(ResponseSchemaBase):
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="gemini_flash",
-        ),
-        pytest.param(
-            AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__PRO,
-                inference_api_settings=AskUiInferenceApiSettings(),
-            ),
-            id="gemini_pro",
         ),
     ],
 )
@@ -325,7 +290,7 @@ def test_get_with_fallback_model(
     github_login_screenshot: PILImage.Image,
 ) -> None:
     askui_get_model = AskUiGeminiGetModel(
-        model_id=ModelName.GEMINI__2_5__FLASH,
+        model_id=ModelName.GEMINI__3_5__FLASH,
         inference_api_settings=AskUiInferenceApiSettings(),
     )
     with ComputerAgent(
@@ -378,7 +343,7 @@ def test_get_with_response_schema_with_default_value(
         pytest.param(None, id="default"),
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -419,7 +384,7 @@ def test_get_with_response_schema(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -457,7 +422,7 @@ class LinkedListNode(ResponseSchemaBase):
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -490,7 +455,7 @@ def test_get_with_recursive_response_schema(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -520,14 +485,14 @@ def test_get_with_string_schema(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
         ),
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="gemini_flash",
@@ -558,7 +523,7 @@ def test_get_with_boolean_schema(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -589,7 +554,7 @@ def test_get_with_integer_schema(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -620,7 +585,7 @@ def test_get_with_float_schema(
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -653,7 +618,7 @@ class Basis(ResponseSchemaBase):
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -692,7 +657,7 @@ class BasisWithNestedRootModel(ResponseSchemaBase):
     [
         pytest.param(
             AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__FLASH,
+                model_id=ModelName.GEMINI__3_5__FLASH,
                 inference_api_settings=AskUiInferenceApiSettings(),
             ),
             id="askui",
@@ -747,15 +712,7 @@ class PageDom(ResponseSchemaBase):
 
 @pytest.mark.parametrize(
     "get_model",
-    [
-        pytest.param(
-            AskUiGeminiGetModel(
-                model_id=ModelName.GEMINI__2_5__PRO,
-                inference_api_settings=AskUiInferenceApiSettings(),
-            ),
-            id="gemini_pro",
-        ),
-    ],
+    [],
 )
 def test_get_with_deeply_nested_response_schema_with_model_that_does_not_support_recursion(
     agent_os_mock_patch: ComputerAgentOS,  # noqa: ARG001
