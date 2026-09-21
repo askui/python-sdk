@@ -83,7 +83,7 @@ from askui.model_providers import GoogleImageQAProvider
 
 with ComputerAgent(settings=AgentSettings(
     image_qa_provider=GoogleImageQAProvider(
-        model_id="gemini-2.5-pro",
+        model_id="gemini-3.5-flash",
     ),
 )) as agent:
     agent.get("What is shown on the display")

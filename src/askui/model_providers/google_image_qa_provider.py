@@ -14,7 +14,7 @@ from askui.models.shared.settings import GetSettings
 from askui.models.types.response_schemas import ResponseSchema
 from askui.utils.source_utils import Source
 
-_DEFAULT_MODEL_ID = "gemini-2.5-flash"
+_DEFAULT_MODEL_ID = "gemini-3.5-flash"
 
 
 class GoogleImageQAProvider(ImageQAProvider):
@@ -32,7 +32,7 @@ class GoogleImageQAProvider(ImageQAProvider):
         auth_token (str | None, optional): Authorization token for custom
             authentication. Added as an `Authorization` header.
         model_id (str, optional): Gemini model to use. Defaults to
-            `\"gemini-2.5-flash\"`.
+            `\"gemini-3.5-flash\"`.
         client (GenaiClient | None, optional): Pre-configured Google GenAI client.
             If provided, other connection parameters are ignored.
 
@@ -44,7 +44,7 @@ class GoogleImageQAProvider(ImageQAProvider):
         agent = ComputerAgent(settings=AgentSettings(
             image_qa_provider=GoogleImageQAProvider(
                 api_key=\"AIza...\",
-                model_id=\"gemini-2.5-pro\",
+                model_id=\"gemini-3.5-flash\",
             )
         ))
         ```

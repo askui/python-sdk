@@ -33,7 +33,7 @@ class GoogleGetModel(GetModel):
     """GetModel implementation for Google Gemini models.
 
     Args:
-        model_id (str): The model identifier (e.g., "gemini-2.5-flash").
+        model_id (str): The model identifier (e.g., "gemini-3.5-flash").
         client (genai.Client): The Google GenAI client for creating messages.
     """
 
