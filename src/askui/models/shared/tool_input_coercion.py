@@ -16,8 +16,8 @@ import jsonref
 
 logger = logging.getLogger(__name__)
 
-_TRUE_STRINGS = frozenset({"true", "1", "yes"})
-_FALSE_STRINGS = frozenset({"false", "0", "no"})
+_TRUE_STRINGS = frozenset({"true", "1"})
+_FALSE_STRINGS = frozenset({"false", "0"})
 
 
 def coerce_tool_input(
@@ -31,7 +31,8 @@ def coerce_tool_input(
     - `3.0` -> `3` for `integer`
     - `"3.5"` -> `3.5` for `number`
     - `"true"` / `"false"` (and `1` / `0`) -> `bool` for `boolean`
-    - `42` -> `"42"` for `string`
+    - `42` -> `"42"` for `string` (booleans are not converted, since `"True"`
+      vs. `"true"` would be a guess)
 
     Values that cannot be converted, keys that are not described by the schema,
     and schemas without a recognizable scalar `type` are returned unchanged. The
@@ -120,7 +121,11 @@ def _coerce_scalar(value: Any, declared_types: set[str]) -> Any:
         as_bool = _to_bool(value)
         if as_bool is not None:
             return as_bool
-    if "string" in declared_types and isinstance(value, (int, float)):
+    if (
+        "string" in declared_types
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+    ):
         return str(value)
     return value
 

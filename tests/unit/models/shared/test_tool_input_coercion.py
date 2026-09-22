@@ -78,6 +78,7 @@ class TestCoerceToolInput:
             ("False", False),
             ("1", True),
             (0, False),
+            ("yes", "yes"),
             ("maybe", "maybe"),
             (2, 2),
         ],
@@ -97,6 +98,12 @@ class TestCoerceToolInput:
         schema = {"type": "object", "properties": {"text": {"type": "string"}}}
 
         assert coerce_tool_input({"text": 42}, schema) == {"text": "42"}
+        assert coerce_tool_input({"text": 1.5}, schema) == {"text": "1.5"}
+
+    def test_booleans_are_not_coerced_to_string(self) -> None:
+        schema = {"type": "object", "properties": {"text": {"type": "string"}}}
+
+        assert coerce_tool_input({"text": True}, schema) == {"text": True}
 
     def test_union_types_are_respected(self) -> None:
         schema = {
@@ -180,3 +187,22 @@ class TestToolCollectionCoercesInput:
         assert isinstance(result, ToolResultBlockParam)
         assert result.is_error is None or result.is_error is False
         assert "Tapped at (726, 122) 2x" in str(result.content)
+
+    def test_non_coercible_value_yields_error_result(self) -> None:
+        tool = _TapLikeTool()
+        collection = ToolCollection(tools=[tool])
+        tool_use = ToolUseBlockParam(
+            id="tool_use_1",
+            input={"x": 726, "y": 122, "repeat": 1, "repeat_delay_in_ms": "abc"},
+            name=tool.name,
+        )
+
+        results = collection.run([tool_use])
+
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, ToolResultBlockParam)
+        assert result.is_error is True
+        assert "not supported between instances of 'str' and 'int'" in str(
+            result.content
+        )
