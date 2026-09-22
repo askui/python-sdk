@@ -38,6 +38,7 @@ from askui.models.shared.agent_message_param import (
     ToolUseBlockParam,
 )
 from askui.models.shared.secrets import SecretVault
+from askui.models.shared.tool_input_coercion import coerce_tool_input
 from askui.tools import ComputerAgentOS
 from askui.tools.android.agent_os import AndroidAgentOs
 from askui.utils.image_utils import ImageSource, base64_to_image
@@ -744,7 +745,10 @@ class ToolCollection:
         tool: Tool,
     ) -> ToolResultBlockParam:
         try:
-            tool_input = self._secret_vault.substitute(tool_use_block_param.input)
+            tool_input = coerce_tool_input(
+                self._secret_vault.substitute(tool_use_block_param.input),
+                tool.input_schema,
+            )
             tool_result: ToolCallResult = tool(**tool_input)
             # Redact secret values that a tool may echo back in its output, so they do
             # not leak into the conversation history / model.
