@@ -74,6 +74,28 @@ def _make_completion(
     )
 
 
+def _completion_with_extra(
+    content: str | None,
+    extra: dict[str, object],
+) -> ChatCompletion:
+    """Build a completion whose message carries non-standard fields.
+
+    Reasoning models return their summary in extra fields (``reasoning_content``
+    / ``reasoning``) that land in ``ChatCompletionMessage.model_extra``.
+    """
+    message = ChatCompletionMessage.model_validate(
+        {"role": "assistant", "content": content, **extra}
+    )
+    return ChatCompletion(
+        id="chatcmpl-test",
+        choices=[Choice(finish_reason="stop", index=0, message=message)],
+        created=1234567890,
+        model="gemini-2.5-pro",
+        object="chat.completion",
+        usage=None,
+    )
+
+
 class TestMapFinishReason:
     def test_stop_maps_to_end_turn(self) -> None:
         assert _map_finish_reason("stop") == "end_turn"
@@ -487,6 +509,70 @@ class TestFromOpenaiResponse:
         result = _from_openai_response(completion)
         assert result.usage is not None
         assert result.usage.input_tokens == 0
+
+
+class TestFromOpenaiResponseThinking:
+    def test_inline_think_tags_become_thinking_block(self) -> None:
+        completion = _make_completion(
+            content="<think>I should click the button.</think>Clicking now."
+        )
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 2
+        thinking, text = result.content
+        assert isinstance(thinking, BetaThinkingBlock)
+        assert thinking.thinking == "I should click the button."
+        assert isinstance(text, TextBlockParam)
+        assert text.text == "Clicking now."
+
+    def test_multiple_think_tags_joined(self) -> None:
+        completion = _make_completion(
+            content="<think>first</think>answer<think>second</think>"
+        )
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        thinking = result.content[0]
+        assert isinstance(thinking, BetaThinkingBlock)
+        assert thinking.thinking == "first\nsecond"
+        text = result.content[1]
+        assert isinstance(text, TextBlockParam)
+        assert text.text == "answer"
+
+    def test_reasoning_content_field_becomes_thinking_block(self) -> None:
+        completion = _completion_with_extra(
+            content="The answer.",
+            extra={"reasoning_content": "Deliberating..."},
+        )
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 2
+        assert isinstance(result.content[0], BetaThinkingBlock)
+        assert result.content[0].thinking == "Deliberating..."
+        assert isinstance(result.content[1], TextBlockParam)
+        assert result.content[1].text == "The answer."
+
+    def test_reasoning_field_alias_becomes_thinking_block(self) -> None:
+        completion = _completion_with_extra(
+            content="Done.",
+            extra={"reasoning": "OpenRouter style."},
+        )
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        assert isinstance(result.content[0], BetaThinkingBlock)
+        assert result.content[0].thinking == "OpenRouter style."
+
+    def test_thinking_only_response_has_no_text_block(self) -> None:
+        completion = _make_completion(content="<think>only thinking</think>")
+        result = _from_openai_response(completion)
+        assert isinstance(result.content, list)
+        assert len(result.content) == 1
+        assert isinstance(result.content[0], BetaThinkingBlock)
+        assert result.content[0].thinking == "only thinking"
+
+    def test_plain_text_without_thinking_unaffected(self) -> None:
+        completion = _make_completion(content="Just a plain answer.")
+        result = _from_openai_response(completion)
+        assert result.content == "Just a plain answer."
 
 
 class TestOpenAIMessagesApi:
