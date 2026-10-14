@@ -24,7 +24,7 @@ class ImageQAProvider(ABC):
 
         provider = GoogleImageQAProvider(
             api_key="...",
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3.5-flash",
         )
         agent = ComputerAgent(settings=AgentSettings(image_qa_provider=provider))
         ```

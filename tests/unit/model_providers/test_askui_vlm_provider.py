@@ -29,6 +29,15 @@ def askui_settings() -> AskUiInferenceApiSettings:
     )
 
 
+class TestAskUIVlmProviderDefaults:
+    def test_default_model_is_haiku_5_5(
+        self, askui_settings: AskUiInferenceApiSettings
+    ) -> None:
+        provider = AskUIVlmProvider(askui_settings=askui_settings)
+        assert provider.model_id == "claude-haiku-5-5"
+        assert isinstance(provider._messages_api, AnthropicMessagesApi)
+
+
 class TestAskUIVlmProviderRouting:
     def test_claude_model_uses_anthropic_messages_api(
         self, askui_settings: AskUiInferenceApiSettings
@@ -44,7 +53,7 @@ class TestAskUIVlmProviderRouting:
     ) -> None:
         provider = AskUIVlmProvider(
             askui_settings=askui_settings,
-            model_id="gemini-2.5-pro",
+            model_id="gemini-3.5-flash",
         )
         assert isinstance(provider._messages_api, OpenAIMessagesApi)
 
@@ -72,7 +81,7 @@ class TestAskUIVlmProviderRouting:
     ) -> None:
         provider = AskUIVlmProvider(
             askui_settings=askui_settings,
-            model_id="gemini-2.5-pro",
+            model_id="gemini-3.5-flash",
         )
         api = provider._messages_api
         assert isinstance(api, OpenAIMessagesApi)
@@ -97,7 +106,7 @@ class TestAskUIVlmProviderRouting:
         mock_client = MagicMock(spec=OpenAI)
         provider = AskUIVlmProvider(
             askui_settings=askui_settings,
-            model_id="gemini-2.5-pro",
+            model_id="gemini-3.5-flash",
             client=mock_client,
         )
         api = provider._messages_api
@@ -121,7 +130,7 @@ class TestAskUIVlmProviderSystemPrompt:
     ) -> None:
         provider = AskUIVlmProvider(
             askui_settings=askui_settings,
-            model_id="gemini-2.5-pro",
+            model_id="gemini-3.5-flash",
         )
         system = SystemPrompt(prompt="Base prompt.")
         rendered = str(provider.augment_system_prompt(system))

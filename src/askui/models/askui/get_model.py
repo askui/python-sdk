@@ -40,7 +40,7 @@ class AskUiGeminiGetModel(GetModel):
     """GetModel implementation using Google Gemini API (via AskUI proxy).
 
     Args:
-        model_id (str): The model identifier (default: GEMINI__2_5__FLASH).
+        model_id (str): The model identifier (default: GEMINI__3_5__FLASH).
         inference_api_settings (AskUiInferenceApiSettings | None, optional):
             API configuration for connecting to AskUI inference API.
             If None, uses default settings.
@@ -51,7 +51,7 @@ class AskUiGeminiGetModel(GetModel):
 
     def __init__(
         self,
-        model_id: str = ModelName.GEMINI__2_5__FLASH,
+        model_id: str = ModelName.GEMINI__3_5__FLASH,
         inference_api_settings: AskUiInferenceApiSettings | None = None,
         get_settings: GetSettings | None = None,
     ) -> None:

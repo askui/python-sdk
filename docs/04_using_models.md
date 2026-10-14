@@ -31,7 +31,7 @@ from askui.model_providers import AskUIVlmProvider, AskUIImageQAProvider
 
 with ComputerAgent(settings=AgentSettings(
     vlm_provider=AskUIVlmProvider(model_id="claude-opus-5"),
-    image_qa_provider=AskUIImageQAProvider(model_id="gemini-2.5-pro"),
+    image_qa_provider=AskUIImageQAProvider(model_id="gemini-3.5-flash"),
 )) as agent:
     agent.act("Complete the checkout process")
 ```
@@ -39,14 +39,13 @@ with ComputerAgent(settings=AgentSettings(
 The following models are available with your AskUI credentials through the AskUI API:
 
 **VLM Provider** (for `act()`):
-- `claude-haiku-4-5-20251001` (most cost efficient)
-- - `gemini-3.5-flash` (fastest)
-- `claude-sonnet-5`(default)
+- `claude-haiku-5-5` (default, most cost efficient)
+- `gemini-3.5-flash` (fastest)
+- `claude-sonnet-5`
 - `claude-opus-5` (most capable)
 
 
 **Image Q&A Provider** (for `get()`): Gemini models via AskUI's Gemini proxy
-- `gemini-2.5-flash` (default)
-- `gemini-2.5-pro`
+- `gemini-3.5-flash` (default)
 
 You can find more details on the capabilities and limitations of the Anthropic Claude models [here](https://platform.claude.com/docs/en/about-claude/models/overview), and the Google Gemini models [here](https://modelcards.withgoogle.com/model-cards)

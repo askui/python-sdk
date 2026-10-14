@@ -110,6 +110,15 @@ _DEFAULT_PRICING.update(
             cache_write_cost_per_million_tokens=6.25,
             cache_read_cost_per_million_tokens=0.50,
         ),
+        # https://platform.claude.com/docs/en/about-claude/pricing, accessed
+        # October 14, 2026. Rates for prompts up to 100K tokens; Anthropic bills
+        # longer prompts at 5x, which a flat rate cannot express.
+        "claude-haiku-5-5": ModelPricing(
+            input_cost_per_million_tokens=0.10,
+            output_cost_per_million_tokens=0.50,
+            cache_write_cost_per_million_tokens=0.125,
+            cache_read_cost_per_million_tokens=0.01,
+        ),
         "gpt-5.4": ModelPricing(
             input_cost_per_million_tokens=2.5,
             output_cost_per_million_tokens=15.0,

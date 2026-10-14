@@ -51,55 +51,55 @@ files = [
 
 [[package]]
 name = "anthropic"
-version = "1.2.0"
+version = "1.13.0"
 requires_python = ">=3.10"
 summary = "The official Python library for the anthropic API"
 groups = ["default", "all", "bedrock", "vertex"]
 dependencies = [
-    "anyio<5,>=3.5.0",
+    "anyio<5,>=4.1.0",
     "docstring-parser<1,>=0.15",
     "httpx2<3,>=2.0.0",
     "jiter<1,>=0.4.0",
-    "pydantic<3,>=1.9.0",
+    "pydantic<3,>=1.10.0",
     "sniffio<2,>=1",
     "typing-extensions<5,>=4.14",
 ]
 files = [
-    {file = "anthropic-1.2.0-py3-none-any.whl", hash = "sha256:b60642b3e3cd6b8e3e328a2d3f2863ad2b6e743f1037e42cc0143f7df99f63c6"},
-    {file = "anthropic-1.2.0.tar.gz", hash = "sha256:12f8eedee7b7fb5685837b1371b7bfae1b281703f62355f4632598ec2fc53b34"},
+    {file = "anthropic-1.13.0-py3-none-any.whl", hash = "sha256:157bd74dbf6a595cf9e5fcac557c791fd297924dc48261f57470c2ed6f4e6671"},
+    {file = "anthropic-1.13.0.tar.gz", hash = "sha256:ad11d9bb9adafdfea26113943bcde9973e2a439ebeeda6c89ff3e3d85bb2f5c1"},
 ]
 
 [[package]]
 name = "anthropic"
-version = "1.2.0"
+version = "1.13.0"
 extras = ["bedrock"]
 requires_python = ">=3.10"
 summary = "The official Python library for the anthropic API"
 groups = ["all", "bedrock"]
 dependencies = [
-    "anthropic==1.2.0",
+    "anthropic==1.13.0",
     "boto3<2,>=1.28.57",
     "botocore<2,>=1.31.57",
 ]
 files = [
-    {file = "anthropic-1.2.0-py3-none-any.whl", hash = "sha256:b60642b3e3cd6b8e3e328a2d3f2863ad2b6e743f1037e42cc0143f7df99f63c6"},
-    {file = "anthropic-1.2.0.tar.gz", hash = "sha256:12f8eedee7b7fb5685837b1371b7bfae1b281703f62355f4632598ec2fc53b34"},
+    {file = "anthropic-1.13.0-py3-none-any.whl", hash = "sha256:157bd74dbf6a595cf9e5fcac557c791fd297924dc48261f57470c2ed6f4e6671"},
+    {file = "anthropic-1.13.0.tar.gz", hash = "sha256:ad11d9bb9adafdfea26113943bcde9973e2a439ebeeda6c89ff3e3d85bb2f5c1"},
 ]
 
 [[package]]
 name = "anthropic"
-version = "1.2.0"
+version = "1.13.0"
 extras = ["vertex"]
 requires_python = ">=3.10"
 summary = "The official Python library for the anthropic API"
 groups = ["all", "vertex"]
 dependencies = [
-    "anthropic==1.2.0",
+    "anthropic==1.13.0",
     "google-auth[requests]<3,>=2",
 ]
 files = [
-    {file = "anthropic-1.2.0-py3-none-any.whl", hash = "sha256:b60642b3e3cd6b8e3e328a2d3f2863ad2b6e743f1037e42cc0143f7df99f63c6"},
-    {file = "anthropic-1.2.0.tar.gz", hash = "sha256:12f8eedee7b7fb5685837b1371b7bfae1b281703f62355f4632598ec2fc53b34"},
+    {file = "anthropic-1.13.0-py3-none-any.whl", hash = "sha256:157bd74dbf6a595cf9e5fcac557c791fd297924dc48261f57470c2ed6f4e6671"},
+    {file = "anthropic-1.13.0.tar.gz", hash = "sha256:ad11d9bb9adafdfea26113943bcde9973e2a439ebeeda6c89ff3e3d85bb2f5c1"},
 ]
 
 [[package]]
@@ -1762,7 +1762,7 @@ files = [
 
 [[package]]
 name = "httpcore2"
-version = "2.12.0"
+version = "2.13.1"
 requires_python = ">=3.10"
 summary = "A minimal low-level HTTP client."
 groups = ["default", "all", "bedrock", "vertex"]
@@ -1772,8 +1772,8 @@ dependencies = [
     "truststore>=0.10",
 ]
 files = [
-    {file = "httpcore2-2.12.0-py3-none-any.whl", hash = "sha256:7e04258ce01013d7d615e5b910a3b27fac937d7a95038227e79652b4ba3b4ceb"},
-    {file = "httpcore2-2.12.0.tar.gz", hash = "sha256:9293522bba0aa7c4c8e9e3f040c16575bd8868e155a77fa30c7a9085a5eae648"},
+    {file = "httpcore2-2.13.1-py3-none-any.whl", hash = "sha256:e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a"},
+    {file = "httpcore2-2.13.1.tar.gz", hash = "sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103"},
 ]
 
 [[package]]
@@ -1806,21 +1806,21 @@ files = [
 
 [[package]]
 name = "httpx2"
-version = "2.12.0"
+version = "2.13.1"
 requires_python = ">=3.10"
 summary = "The next generation HTTP client."
 groups = ["default", "all", "bedrock", "vertex"]
 dependencies = [
     "anyio>=4.10; sys_platform != \"emscripten\"",
-    "httpcore2==2.12.0; sys_platform != \"emscripten\"",
+    "httpcore2==2.13.1; sys_platform != \"emscripten\"",
     "httpx2-jsfetch; sys_platform == \"emscripten\" and python_version >= \"3.12\"",
     "idna>=3.18",
     "truststore>=0.10; sys_platform != \"emscripten\"",
     "typing-extensions>=4.5.0; python_version < \"3.13\"",
 ]
 files = [
-    {file = "httpx2-2.12.0-py3-none-any.whl", hash = "sha256:cc8b6eecb8661c146b8f89a60e97456ee086e91a784ed31ac450c3a9e613dd36"},
-    {file = "httpx2-2.12.0.tar.gz", hash = "sha256:7631fe9887a8a2275f4a2540e053aa670fcc50742864a9ae7c66e609fdcf12cf"},
+    {file = "httpx2-2.13.1-py3-none-any.whl", hash = "sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4"},
+    {file = "httpx2-2.13.1.tar.gz", hash = "sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa"},
 ]
 
 [[package]]
@@ -4372,14 +4372,14 @@ files = [
 
 [[package]]
 name = "truststore"
-version = "0.10.4"
+version = "0.10.5"
 requires_python = ">=3.10"
 summary = "Verify certificates using native system trust stores"
 groups = ["default", "all", "bedrock", "vertex"]
 marker = "sys_platform != \"emscripten\""
 files = [
-    {file = "truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981"},
-    {file = "truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301"},
+    {file = "truststore-0.10.5-py3-none-any.whl", hash = "sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c"},
+    {file = "truststore-0.10.5.tar.gz", hash = "sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd"},
 ]
 
 [[package]]

@@ -13,7 +13,7 @@ from askui.models.shared.settings import GetSettings
 from askui.models.types.response_schemas import ResponseSchema
 from askui.utils.source_utils import Source
 
-_DEFAULT_MODEL_ID = "gemini-2.5-flash"
+_DEFAULT_MODEL_ID = "gemini-3.5-flash"
 
 
 class AskUIImageQAProvider(ImageQAProvider):
@@ -30,7 +30,7 @@ class AskUIImageQAProvider(ImageQAProvider):
         token (str | None, optional): AskUI API token. Reads `ASKUI_TOKEN`
             from the environment if not provided.
         model_id (str, optional): Gemini model to use. Defaults to
-            ``"gemini-2.5-flash"``.
+            ``"gemini-3.5-flash"``.
         get_model (AskUiGeminiGetModel | None, optional): Pre-configured get model.
             If provided, `workspace_id` and `token` are ignored.
 
@@ -41,7 +41,7 @@ class AskUIImageQAProvider(ImageQAProvider):
 
         agent = ComputerAgent(settings=AgentSettings(
             image_qa_provider=AskUIImageQAProvider(
-                model_id="gemini-2.5-pro",
+                model_id="gemini-3.5-flash",
             )
         ))
         ```

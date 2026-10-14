@@ -57,7 +57,7 @@ def create_askui_providers() -> AgentSettings:
     """Create settings using AskUI-hosted providers (default)."""
     return AgentSettings(
         vlm_provider=AskUIVlmProvider(model_id="claude-sonnet-4-5-20250929"),
-        image_qa_provider=AskUIImageQAProvider(model_id="gemini-2.5-flash"),
+        image_qa_provider=AskUIImageQAProvider(model_id="gemini-3.5-flash"),
         detection_provider=AskUIDetectionProvider(),
     )
 
@@ -87,7 +87,7 @@ def create_google_providers() -> AgentSettings:
         vlm_provider=AskUIVlmProvider(model_id="claude-sonnet-4-5-20250929"),
         image_qa_provider=GoogleImageQAProvider(
             api_key=api_key,
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3.5-flash",
         ),
         detection_provider=AskUIDetectionProvider(),
     )
@@ -104,7 +104,7 @@ def create_mixed_providers() -> AgentSettings:
         # Google for fast image Q&A
         image_qa_provider=GoogleImageQAProvider(
             api_key=os.environ.get("GOOGLE_API_KEY", ""),
-            model_id="gemini-2.5-flash",
+            model_id="gemini-3.5-flash",
         ),
         # AskUI for element detection
         detection_provider=AskUIDetectionProvider(),
