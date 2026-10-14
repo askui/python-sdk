@@ -29,6 +29,7 @@ default without knowing which generation they run on. Callers can still override
 `thinking` (and `provider_options`) explicitly.
 """
 
+import re
 from typing import Any
 
 from askui.models.shared.agent_message_param import EffortLevel
@@ -73,12 +74,18 @@ _ALWAYS_ON_THINKING_MODEL_PREFIXES = (
 )
 
 
+# A dot between two digits, e.g. the "4.5" in OpenRouter's "claude-haiku-4.5".
+_VERSION_DOT = re.compile(r"(?<=\d)\.(?=\d)")
+
+
 def _normalize(model_id: str) -> str | None:
     """Extract the ``claude-...`` core of a model ID.
 
     Gateway wrappers then match like bare IDs (e.g.
     ``"us.anthropic.claude-opus-4-8-v1:0"`` and ``"anthropic/claude-opus-4-8"``
-    both normalize to ``"claude-opus-4-8..."``).
+    both normalize to ``"claude-opus-4-8..."``). A dot between version digits,
+    as OpenRouter writes it (``"anthropic/claude-haiku-4.5"``), becomes the dash
+    the prefixes use, so it classifies like ``"claude-haiku-4-5"``.
 
     Args:
         model_id (str): The (possibly gateway-prefixed) model identifier.
@@ -88,7 +95,9 @@ def _normalize(model_id: str) -> str | None:
             if the ID does not reference a Claude model.
     """
     index = model_id.find("claude-")
-    return None if index < 0 else model_id[index:]
+    if index < 0:
+        return None
+    return _VERSION_DOT.sub("-", model_id[index:])
 
 
 def uses_adaptive_thinking(model_id: str) -> bool:

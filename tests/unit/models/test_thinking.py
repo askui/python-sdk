@@ -29,6 +29,10 @@ _ADAPTIVE_MODELS = [
     "anthropic/claude-fable-5",
     "bedrock/us.anthropic.claude-opus-4-7-v1:0",
     "vertex_ai/claude-sonnet-4-6",
+    # OpenRouter writes the version with a dot.
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-haiku-5.5",
+    "anthropic/claude-opus-5.5",
 ]
 
 _BUDGET_MODELS = [
@@ -42,6 +46,8 @@ _BUDGET_MODELS = [
     "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
     "anthropic/claude-haiku-4-5",
     "claude-opus-4-5@20251101",  # Vertex version separator
+    "anthropic/claude-haiku-4.5",  # OpenRouter dotted version
+    "anthropic/claude-sonnet-4.5",
     "gpt-5.4",
     "some-unknown-model",
 ]
@@ -96,6 +102,9 @@ def test_sonnet_5_is_not_confused_with_sonnet_4_5() -> None:
         ("claude-fable-5", False),
         ("anthropic.claude-opus-4-8", False),  # gateway IDs classified too
         ("anthropic/claude-sonnet-5", False),
+        ("anthropic/claude-sonnet-4.6", True),  # OpenRouter dotted versions
+        ("anthropic/claude-haiku-4.5", True),
+        ("anthropic/claude-haiku-5.5", False),
         ("gpt-5.4", True),  # non-Claude: other providers manage their own
     ],
 )
@@ -124,6 +133,13 @@ def test_non_thinking_settings_keep_parity_on_older_models() -> None:
         "thinking": {"type": "disabled"},
         "temperature": 0.0,
     }
+
+
+def test_dotted_version_does_not_match_a_longer_dashed_prefix() -> None:
+    # "4.6" -> "4-6" must not turn "claude-sonnet-4.5..." into a 4.6 match or
+    # rewrite dots outside a digit pair (Bedrock's "-v1:0" stays untouched).
+    assert uses_adaptive_thinking("anthropic/claude-sonnet-4.5") is False
+    assert uses_adaptive_thinking("us.anthropic.claude-opus-4-8-v1:0") is True
 
 
 def test_non_thinking_settings_drop_temperature_from_opus_4_7_on() -> None:
