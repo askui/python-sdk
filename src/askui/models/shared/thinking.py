@@ -29,6 +29,7 @@ default without knowing which generation they run on. Callers can still override
 `thinking` (and `provider_options`) explicitly.
 """
 
+import re
 from typing import Any
 
 from askui.models.shared.agent_message_param import EffortLevel
@@ -54,9 +55,12 @@ _LEGACY_BUDGET_THINKING_MODEL_PREFIXES = (
     "claude-opus-4-5",
 )
 
-# The one adaptive-thinking generation that still accepts sampling parameters
-# (temperature/top_p/top_k). From Opus 4.7 / Sonnet 5 / Fable 5 onward the API
-# rejects them with a 400.
+# The adaptive-thinking generation that still accepts sampling parameters
+# (temperature/top_p/top_k) when thinking is not adaptive. From Opus 4.7 /
+# Sonnet 5 / Fable 5 onward the API rejects sampling params outright with a 400.
+# (Note: even for these models, an explicit temperature is rejected while
+# *adaptive* thinking is enabled - that constraint is enforced separately, at
+# request time, not by this model classification.)
 _SAMPLING_CAPABLE_ADAPTIVE_MODEL_PREFIXES = (
     "claude-sonnet-4-6",
     "claude-opus-4-6",
@@ -70,12 +74,18 @@ _ALWAYS_ON_THINKING_MODEL_PREFIXES = (
 )
 
 
+# A dot between two digits, e.g. the "4.5" in OpenRouter's "claude-haiku-4.5".
+_VERSION_DOT = re.compile(r"(?<=\d)\.(?=\d)")
+
+
 def _normalize(model_id: str) -> str | None:
     """Extract the ``claude-...`` core of a model ID.
 
     Gateway wrappers then match like bare IDs (e.g.
     ``"us.anthropic.claude-opus-4-8-v1:0"`` and ``"anthropic/claude-opus-4-8"``
-    both normalize to ``"claude-opus-4-8..."``).
+    both normalize to ``"claude-opus-4-8..."``). A dot between version digits,
+    as OpenRouter writes it (``"anthropic/claude-haiku-4.5"``), becomes the dash
+    the prefixes use, so it classifies like ``"claude-haiku-4-5"``.
 
     Args:
         model_id (str): The (possibly gateway-prefixed) model identifier.
@@ -85,7 +95,9 @@ def _normalize(model_id: str) -> str | None:
             if the ID does not reference a Claude model.
     """
     index = model_id.find("claude-")
-    return None if index < 0 else model_id[index:]
+    if index < 0:
+        return None
+    return _VERSION_DOT.sub("-", model_id[index:])
 
 
 def uses_adaptive_thinking(model_id: str) -> bool:
@@ -114,6 +126,11 @@ def accepts_sampling_params(model_id: str) -> bool:
     (Opus 4.7/4.8, Sonnet 5, Fable 5, and future models), which reject them
     with a 400. True for older Claude models and non-Claude model IDs (other
     providers manage their own sampling parameters).
+
+    Note: this is a *model-level* capability. Sonnet 4.6 / Opus 4.6 accept
+    ``temperature`` in general, but the API still rejects it while *adaptive*
+    thinking is enabled - that request-level rule is enforced in the messages
+    API, not here.
 
     Args:
         model_id (str): The model identifier (bare or gateway-prefixed).
