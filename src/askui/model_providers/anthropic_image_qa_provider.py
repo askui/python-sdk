@@ -13,7 +13,7 @@ from askui.models.shared.settings import GetSettings
 from askui.models.types.response_schemas import ResponseSchema
 from askui.utils.source_utils import Source
 
-_DEFAULT_MODEL_ID = "claude-sonnet-4-5-20251101"
+_DEFAULT_MODEL_ID = "claude-haiku-5-5"
 
 
 class AnthropicImageQAProvider(ImageQAProvider):
@@ -31,7 +31,7 @@ class AnthropicImageQAProvider(ImageQAProvider):
         auth_token (str | None, optional): Authorization token for custom
             authentication. Added as an `Authorization` header.
         model_id (str, optional): Claude model to use. Defaults to
-            `\"claude-sonnet-4-5-20251101\"`.
+            `\"claude-haiku-5-5\"`.
         client (Anthropic | None, optional): Pre-configured Anthropic client.
             If provided, other connection parameters are ignored.
 

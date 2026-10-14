@@ -29,6 +29,15 @@ def askui_settings() -> AskUiInferenceApiSettings:
     )
 
 
+class TestAskUIVlmProviderDefaults:
+    def test_default_model_is_haiku_5_5(
+        self, askui_settings: AskUiInferenceApiSettings
+    ) -> None:
+        provider = AskUIVlmProvider(askui_settings=askui_settings)
+        assert provider.model_id == "claude-haiku-5-5"
+        assert isinstance(provider._messages_api, AnthropicMessagesApi)
+
+
 class TestAskUIVlmProviderRouting:
     def test_claude_model_uses_anthropic_messages_api(
         self, askui_settings: AskUiInferenceApiSettings

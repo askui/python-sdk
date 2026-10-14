@@ -39,9 +39,9 @@ with ComputerAgent(settings=AgentSettings(
 The following models are available with your AskUI credentials through the AskUI API:
 
 **VLM Provider** (for `act()`):
-- `claude-haiku-4-5-20251001` (most cost efficient)
+- `claude-haiku-5-5` (default, most cost efficient)
 - `gemini-3.5-flash` (fastest)
-- `claude-sonnet-5`(default)
+- `claude-sonnet-5`
 - `claude-opus-5` (most capable)
 
 
