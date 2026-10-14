@@ -28,6 +28,7 @@ class TestModelPricingForModel:
             ("claude-opus-4-5-20251101", 5.0, 25.0, 6.25, 0.50),
             ("claude-sonnet-4-6", 3.0, 15.0, 3.75, 0.30),
             ("claude-opus-4-6", 5.0, 25.0, 6.25, 0.50),
+            ("claude-haiku-5-5", 0.10, 0.50, 0.125, 0.01),
         ],
     )
     def test_known_model_returns_default_pricing(
