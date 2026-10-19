@@ -83,9 +83,9 @@ Access pre-built tools, integrate external services via MCP, and extend agent ca
 Generate human-readable logs of agent actions for debugging and auditing.
 
 ### 09 - Observability, Telemetry, Tracing
-**Topics**: Telemetry data, privacy, disabling telemetry
+**Topics**: Telemetry data, privacy, enabling telemetry
 
-Understand what data is collected and how to opt out.
+Understand what data is collected and how to opt in.
 
 ### 10 - Extracting Data
 **Topics**: Using `get()`, file support (PDF. Excel, Word, CSV), structured data extraction, response schemas

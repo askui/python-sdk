@@ -4,7 +4,7 @@ Telemetry collects usage data to help improve AskUI Vision Agent. This data is u
 
 ### What Data Is Collected
 
-**Enabled by default**, telemetry records:
+**Disabled by default.** When enabled, telemetry records:
 
 - **Package Version**: `askui` package version in use
 - **Environment Information**:
@@ -41,29 +41,23 @@ Telemetry collects usage data to help improve AskUI Vision Agent. This data is u
 - **Workspace Linkage**: If `ASKUI_WORKSPACE_ID` and `ASKUI_TOKEN` are set, telemetry is linked to your workspace for better support
 - **Open Source**: Telemetry code is open source and auditable in the repository
 
-### Disabling Telemetry
+### Enabling Telemetry
 
-To opt out of telemetry collection, set an environment variable:
+Telemetry is off unless you opt in by setting an environment variable:
 
 #### Linux & MacOS
 ```bash
-export ASKUI__VA__TELEMETRY__ENABLED=False
+export ASKUI__VA__TELEMETRY__ENABLED=True
 ```
 
 #### Windows PowerShell
 ```powershell
-$env:ASKUI__VA__TELEMETRY__ENABLED="False"
+$env:ASKUI__VA__TELEMETRY__ENABLED="True"
 ```
 
 #### Windows Command Prompt
 ```cmd
-set ASKUI__VA__TELEMETRY__ENABLED=False
-```
-
-#### In Code
-```python
-from askui import ComputerAgent
-# Telemetry is now disabled for this session
+set ASKUI__VA__TELEMETRY__ENABLED=True
 ```
 
 When disabled, no usage data is collected or transmitted.

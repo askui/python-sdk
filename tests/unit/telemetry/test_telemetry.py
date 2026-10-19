@@ -20,6 +20,10 @@ def test_telemetry_disabled() -> None:
     assert len(processor.get_events()) == 0
 
 
+def test_telemetry_disabled_by_default() -> None:
+    assert TelemetrySettings().enabled is False
+
+
 def test_telemetry_enabled() -> None:
     settings = TelemetrySettings(enabled=True)
     telemetry = Telemetry(settings)

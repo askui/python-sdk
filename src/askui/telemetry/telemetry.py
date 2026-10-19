@@ -70,7 +70,7 @@ class TelemetrySettings(BaseModel):
             "multiple processes to associate all of them with a single session."
         ),
     )
-    enabled: bool = True
+    enabled: bool = False
 
 
 class Telemetry:
