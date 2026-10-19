@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Tuple, cast
 
 from anthropic import (
@@ -42,9 +43,12 @@ from askui.models.shared.agent_message_param import (
 )
 from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
+from askui.models.shared.thinking import accepts_sampling_params
 from askui.models.shared.tools import ToolCollection
 from askui.utils.image_utils import image_to_base64
 from askui.utils.pdf_utils import PdfSource
+
+logger = logging.getLogger(__name__)
 
 
 def _is_retryable_error(exception: BaseException) -> bool:
@@ -54,12 +58,27 @@ def _is_retryable_error(exception: BaseException) -> bool:
     return isinstance(exception, (APIConnectionError, APITimeoutError, APIError))
 
 
+def _is_adaptive_thinking(thinking: BetaThinkingConfigParam | Omit) -> bool:
+    """Whether *adaptive* thinking is enabled for this request.
+
+    The API rejects a non-default ``temperature`` while adaptive thinking is on
+    (fixed ``budget_tokens`` thinking is unaffected), so temperature is dropped
+    in that case.
+    """
+    return isinstance(thinking, dict) and thinking.get("type") == "adaptive"
+
+
 def from_content_block(block: ContentBlockParam) -> BetaContentBlockParam:
     """Convert an internal content block to an Anthropic API-compatible dict.
 
-    Uses `model_dump()` to produce plain dicts compatible with Anthropic's
-    TypedDicts. Strips ``visual_representation`` and ``extra_content`` from
-    `ToolUseBlockParam` as they are not accepted by the API.
+    Uses `model_dump(exclude_none=True)` to produce plain dicts compatible with
+    Anthropic's TypedDicts. ``exclude_none`` omits unset optional fields (e.g.
+    ``cache_control``, ``citations``) instead of serialising them as explicit
+    ``null``. The Anthropic API tolerates those nulls, but stricter
+    Anthropic-compatible endpoints (e.g. OpenRouter's) reject them with
+    ``cache_control: expected object, received null``. Also strips
+    ``visual_representation`` and ``extra_content`` from `ToolUseBlockParam` as
+    they are not accepted by the API.
     """
     if isinstance(block, ToolUseBlockParam):
         # visual_representation (perceptual hash for cache validation) and
@@ -69,9 +88,12 @@ def from_content_block(block: ContentBlockParam) -> BetaContentBlockParam:
         # unknown-field error.
         return cast(
             "BetaContentBlockParam",
-            block.model_dump(exclude={"visual_representation", "extra_content"}),
+            block.model_dump(
+                exclude={"visual_representation", "extra_content"},
+                exclude_none=True,
+            ),
         )
-    return cast("BetaContentBlockParam", block.model_dump())
+    return cast("BetaContentBlockParam", block.model_dump(exclude_none=True))
 
 
 def from_message_param(message: MessageParam) -> BetaMessageParam:
@@ -147,7 +169,6 @@ def _parse_to_anthropic_types(
     thinking: ThinkingConfigParam | None = None,
     output_config: dict[str, Any] | None = None,
     tool_choice: ToolChoiceParam | None = None,
-    temperature: float | None = None,
 ) -> Tuple[
     list[BetaToolUnionParam] | Omit,
     list[AnthropicBetaParam] | Omit,
@@ -156,7 +177,6 @@ def _parse_to_anthropic_types(
     BetaThinkingConfigParam | Omit,
     BetaOutputConfigParam | Omit,
     BetaToolChoiceParam | Omit,
-    float | Omit,
 ]:
     """Convert provider-agnostic types to Anthropic-specific types.
 
@@ -193,7 +213,6 @@ def _parse_to_anthropic_types(
     _tool_choice = (
         cast("BetaToolChoiceParam", tool_choice) if tool_choice is not None else omit
     )
-    _temperature = temperature or omit
 
     return (
         _tools,
@@ -203,7 +222,6 @@ def _parse_to_anthropic_types(
         _thinking,
         _output_config,
         _tool_choice,
-        _temperature,
     )
 
 
@@ -213,6 +231,9 @@ class AnthropicMessagesApi(MessagesApi):
         client: AnthropicApiClient,
     ) -> None:
         self._client = client
+        # Models for which we already warned about an ignored temperature, so
+        # the warning fires at most once per model (not on every step).
+        self._temperature_warned: set[str] = set()
 
     @retry(
         stop=stop_after_attempt(4),  # 3 retries
@@ -255,7 +276,6 @@ class AnthropicMessagesApi(MessagesApi):
             _thinking,
             _output_config,
             _tool_choice,
-            _temperature,
         ) = _parse_to_anthropic_types(
             tools,
             betas,
@@ -264,8 +284,37 @@ class AnthropicMessagesApi(MessagesApi):
             thinking,
             output_config,
             tool_choice,
-            temperature,
         )
+
+        # Decide whether to forward `temperature`. The API rejects it (400) in
+        # two independent cases:
+        #   1. Models that deprecated sampling params entirely (Sonnet 5 / Opus
+        #      4.7 onward) - see `accepts_sampling_params`.
+        #   2. Any request with *adaptive* thinking enabled, where a non-default
+        #      temperature is rejected (budget thinking is fine).
+        # Newer `anthropic` clients also removed the typed `temperature` param,
+        # so when we do send it we route it through the request body via
+        # `extra_body`; otherwise we drop it and warn once per model.
+        extra_body: dict[str, Any] = {}
+        if temperature is not None:
+            adaptive = _is_adaptive_thinking(_thinking)
+            if accepts_sampling_params(model_id) and not adaptive:
+                extra_body["temperature"] = temperature
+            elif model_id not in self._temperature_warned:
+                self._temperature_warned.add(model_id)
+                reason = (
+                    "adaptive thinking is enabled (temperature must be left unset)"
+                    if adaptive
+                    else "the model deprecated sampling parameters"
+                )
+                logger.warning(
+                    "Ignoring temperature=%s for model %s: %s.",
+                    temperature,
+                    model_id,
+                    reason,
+                )
+
+        create_kwargs: dict[str, Any] = {"extra_body": extra_body} if extra_body else {}
 
         response = self._client.beta.messages.create(  # type: ignore[misc]
             messages=_messages,
@@ -278,7 +327,7 @@ class AnthropicMessagesApi(MessagesApi):
             thinking=_thinking,
             output_config=_output_config,
             tool_choice=_tool_choice,
-            temperature=_temperature,
             timeout=300.0,
+            **create_kwargs,
         )
         return MessageParam.model_validate(response.model_dump())

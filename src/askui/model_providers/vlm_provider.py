@@ -38,11 +38,8 @@ class VlmProvider(ABC):
         from askui import AgentSettings, ComputerAgent
         from askui.model_providers import AskUIVlmProvider
 
-        provider = AskUIVlmProvider(
-            workspace_id="...",
-            token="...",
-            model_id="claude-sonnet-4-5-20251101",
-        )
+        # Credentials are read from ASKUI_WORKSPACE_ID / ASKUI_TOKEN.
+        provider = AskUIVlmProvider(model_id="claude-sonnet-5-5")
         agent = ComputerAgent(settings=AgentSettings(vlm_provider=provider))
         ```
     """

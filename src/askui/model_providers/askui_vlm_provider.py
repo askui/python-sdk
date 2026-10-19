@@ -28,7 +28,7 @@ from askui.models.shared.messages_api import MessagesApi
 from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 
-_DEFAULT_MODEL_ID = "claude-sonnet-5"
+_DEFAULT_MODEL_ID = "claude-haiku-5-5"
 _DEFAULT_MAX_IMAGE_EDGE = 1024
 # Claude emits native pixel coordinates; Gemini emits coordinates in a
 # 1000x1000 normalised grid.
@@ -87,7 +87,7 @@ class AskUIVlmProvider(VlmProvider):
             Connection settings (workspace ID, token, base URL).  Reads
             from environment variables if not provided.
         model_id (str | None, optional): Model to use. Defaults to
-            ``"claude-sonnet-4-6"``.  Pass a Gemini model id (e.g.
+            ``"claude-haiku-5-5"``.  Pass a Gemini model id (e.g.
             ``"gemini-3.5-pro"``) to route through the OpenAI-compatible proxy.
         client (`Anthropic` | `OpenAI` | None, optional): Pre-configured client.
             Pass an `Anthropic` client for Claude models or an `OpenAI` client

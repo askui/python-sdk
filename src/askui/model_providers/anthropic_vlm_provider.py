@@ -19,14 +19,14 @@ from askui.models.shared.prompts import SystemPrompt
 from askui.models.shared.tools import ToolCollection
 from askui.utils.model_pricing import ModelPricing
 
-_DEFAULT_MODEL_ID = "claude-sonnet-4-6"
+_DEFAULT_MODEL_ID = "claude-haiku-5-5"
 _DEFAULT_MAX_IMAGE_EDGE = 1024
 
 
 class AnthropicVlmProvider(VlmProvider):
     """VLM provider that routes requests directly to the Anthropic API.
 
-    Supports Claude 4.x generation models. The API key is read from the
+    Supports Claude 4.x and 5.x generation models. The API key is read from the
     `ANTHROPIC_API_KEY` environment variable lazily — validation happens on
     the first API call, not at construction time.
 
@@ -38,7 +38,7 @@ class AnthropicVlmProvider(VlmProvider):
         auth_token (str | None, optional): Authorization token for custom
             authentication. Added as an `Authorization` header.
         model_id (str, optional): Claude model to use. Defaults to
-            `\"claude-sonnet-4-6\"`.
+            `\"claude-haiku-5-5\"`.
         client (Anthropic | None, optional): Pre-configured Anthropic client.
             If provided, other connection parameters are ignored.
         input_cost_per_million_tokens (float | None, optional): Override
