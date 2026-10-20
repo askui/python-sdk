@@ -5,7 +5,7 @@
 groups = ["default", "all", "bedrock", "dev", "office-document", "otel", "vertex", "web"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:238adac982e7ce1a5e94921efaea67fb9c397102bd0da26158dea57110ef3887"
+content_hash = "sha256:82aab08310294c91b62d7c2a1a34554b2873059f5a6fff05635e4b1227c92c4d"
 
 [[metadata.targets]]
 requires_python = ">=3.10,<3.14"
@@ -246,17 +246,6 @@ dependencies = [
 files = [
     {file = "authlib-1.7.2-py2.py3-none-any.whl", hash = "sha256:3e1faedc9d87e7d56a164eca3ccb6ace0d61b94abe83e92242f8dc8bba9b4a9f"},
     {file = "authlib-1.7.2.tar.gz", hash = "sha256:2cea25fefcd4e7173bdf1372c0afc265c8034b23a8cd5dcb6a9164b826c64231"},
-]
-
-[[package]]
-name = "backoff"
-version = "2.2.1"
-requires_python = ">=3.7,<4.0"
-summary = "Function decoration for backoff and retry"
-groups = ["default"]
-files = [
-    {file = "backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8"},
-    {file = "backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba"},
 ]
 
 [[package]]
@@ -3279,19 +3268,6 @@ files = [
 ]
 
 [[package]]
-name = "py-machineid"
-version = "1.0.0"
-summary = "Get the unique machine ID of any host (without admin privileges)"
-groups = ["default"]
-dependencies = [
-    "winregistry<3.0.0,>=2.0.1; sys_platform == \"win32\"",
-]
-files = [
-    {file = "py_machineid-1.0.0-py3-none-any.whl", hash = "sha256:910df0d5f2663bcf6739d835c4949f4e9cc6bb090a58b3dd766e12e5f768e3b9"},
-    {file = "py_machineid-1.0.0.tar.gz", hash = "sha256:8a902a00fae8c6d6433f463697c21dc4ce98c6e55a2e0535c0273319acb0047a"},
-]
-
-[[package]]
 name = "py-serializable"
 version = "2.1.0"
 requires_python = "<4.0,>=3.8"
@@ -3674,7 +3650,7 @@ name = "python-dateutil"
 version = "2.9.0.post0"
 requires_python = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
 summary = "Extensions to the standard Python datetime module"
-groups = ["default", "all", "bedrock", "dev", "office-document", "vertex"]
+groups = ["all", "bedrock", "dev", "office-document", "vertex"]
 dependencies = [
     "six>=1.5",
 ]
@@ -4191,23 +4167,6 @@ files = [
 ]
 
 [[package]]
-name = "segment-analytics-python"
-version = "2.3.6"
-requires_python = ">=3.9.0"
-summary = "The hassle-free way to integrate analytics into any python application."
-groups = ["default"]
-dependencies = [
-    "PyJWT~=2.12",
-    "backoff~=2.1",
-    "python-dateutil~=2.2",
-    "requests~=2.7",
-]
-files = [
-    {file = "segment_analytics_python-2.3.6-py2.py3-none-any.whl", hash = "sha256:a8c5c0f542be3be39aa57cd77e7e6b85b2a3c348174bc1192a296aeb81626594"},
-    {file = "segment_analytics_python-2.3.6.tar.gz", hash = "sha256:b07779d90432399fdd08f8cbeb483139cab862b5dca1bb3f0711f415def776a8"},
-]
-
-[[package]]
 name = "setuptools"
 version = "82.0.1"
 requires_python = ">=3.9"
@@ -4223,7 +4182,7 @@ name = "six"
 version = "1.17.0"
 requires_python = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
 summary = "Python 2 and 3 compatibility utilities"
-groups = ["default", "all", "bedrock", "dev", "office-document", "vertex"]
+groups = ["all", "bedrock", "dev", "office-document", "vertex"]
 files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
@@ -4670,18 +4629,6 @@ files = [
     {file = "websockets-16.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:a653aea902e0324b52f1613332ddf50b00c06fdaf7e92624fbf8c77c78fa5767"},
     {file = "websockets-16.0-py3-none-any.whl", hash = "sha256:1637db62fad1dc833276dded54215f2c7fa46912301a24bd94d45d46a011ceec"},
     {file = "websockets-16.0.tar.gz", hash = "sha256:5f6261a5e56e8d5c42a4497b364ea24d94d9563e8fbd44e78ac40879c60179b5"},
-]
-
-[[package]]
-name = "winregistry"
-version = "2.1.5"
-requires_python = ">=3.8"
-summary = "A Python library for interacting with the Windows registry"
-groups = ["default"]
-marker = "sys_platform == \"win32\""
-files = [
-    {file = "winregistry-2.1.5-py3-none-any.whl", hash = "sha256:84e597b8f06c985a6be397e8c75400c2d72797d24134eb740b7b2f3de13089c1"},
-    {file = "winregistry-2.1.5.tar.gz", hash = "sha256:05525ecac026dbdd2d20428a532354138dc6711de8a8f8efdc40484131627ba8"},
 ]
 
 [[package]]

@@ -7,7 +7,6 @@ from pydantic import ConfigDict, Field, validate_call
 from askui.agent_base import Agent
 from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback
-from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.models import Point
 from askui.models.shared.secrets import Secret
@@ -155,17 +154,6 @@ class ComputerAgent(Agent):
         ```
     """
 
-    @telemetry.record_call(
-        exclude={
-            "reporters",
-            "settings",
-            "act_tools",
-            "callbacks",
-            "truncation_strategy",
-            "agent_os_target_computers",
-            "secrets",
-        }
-    )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def __init__(
         self,
@@ -211,7 +199,6 @@ class ComputerAgent(Agent):
             )
         )
 
-    @telemetry.record_call(exclude={"locator"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def click(
         self,
@@ -288,7 +275,6 @@ class ComputerAgent(Agent):
             point = (point[0] + offset[0], point[1] + offset[1])
         self.tools.os.mouse_move(point[0], point[1])
 
-    @telemetry.record_call(exclude={"locator"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def mouse_move(
         self,
@@ -319,7 +305,6 @@ class ComputerAgent(Agent):
         logger.debug("Agent received instruction to mouse_move to %s", locator)
         self._mouse_move(locator, offset, locate_settings)
 
-    @telemetry.record_call()
     @validate_call
     def mouse_scroll(
         self,
@@ -353,7 +338,6 @@ class ComputerAgent(Agent):
         self._reporter.add_message("User", f'mouse_scroll: "{dx}", "{dy}"')
         self.tools.os.mouse_scroll(dx, dy)
 
-    @telemetry.record_call(exclude={"text", "locator"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def type(
         self,
@@ -411,7 +395,6 @@ class ComputerAgent(Agent):
         self._reporter.add_message("User", msg)
         self.tools.os.type(self._resolve_secrets(text))
 
-    @telemetry.record_call()
     @validate_call
     def key_up(
         self,
@@ -436,7 +419,6 @@ class ComputerAgent(Agent):
         logger.debug("ComputerAgent received in key_up '%s'", key)
         self.tools.os.keyboard_release(key)
 
-    @telemetry.record_call()
     @validate_call
     def key_down(
         self,
@@ -461,7 +443,6 @@ class ComputerAgent(Agent):
         logger.debug("ComputerAgent received in key_down '%s'", key)
         self.tools.os.keyboard_pressed(key)
 
-    @telemetry.record_call()
     @validate_call
     def mouse_up(
         self,
@@ -487,7 +468,6 @@ class ComputerAgent(Agent):
         logger.debug("ComputerAgent received instruction to mouse_up '%s'", button)
         self.tools.os.mouse_up(button)
 
-    @telemetry.record_call()
     @validate_call
     def mouse_down(
         self,
@@ -513,7 +493,6 @@ class ComputerAgent(Agent):
         logger.debug("ComputerAgent received instruction to mouse_down '%s'", button)
         self.tools.os.mouse_down(button)
 
-    @telemetry.record_call()
     @validate_call
     def keyboard(
         self,
@@ -551,7 +530,6 @@ class ComputerAgent(Agent):
         logger.debug("ComputerAgent received instruction to press '%s'", key)
         self.tools.os.keyboard_tap(key, modifier_keys, count=repeat)
 
-    @telemetry.record_call(exclude={"command"})
     @validate_call
     def cli(
         self,
