@@ -194,7 +194,7 @@ Tools are auto-discovered and can be dynamically loaded via MCP configurations.
 - `src/askui/utils/` - Image processing, API utilities, caching, annotations
 - `src/askui/reporting.py` - Reporting & logging
 - `src/askui/retry.py` - Retry logic with exponential backoff
-- `src/askui/telemetry/` - OpenTelemetry tracing & analytics
+- `src/askui/telemetry/` - OpenTelemetry tracing
 
 ## Code Style & Conventions
 
@@ -285,7 +285,6 @@ When writing or updating documentation in `docs/`:
 - Structured logging with structlog
 - Correlation IDs for request tracing
 - Prometheus metrics via FastAPI instrumentator
-- Segment Analytics for usage tracking
 
 ## Extending the Framework
 

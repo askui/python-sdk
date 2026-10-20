@@ -190,32 +190,6 @@ class ActModel(abc.ABC):
         """  # noqa: E501
         raise NotImplementedError
 
-    def to_telemetry_dict(self) -> dict[str, str]:
-        """Return a JSON-serializable representation for telemetry.
-
-        For ActModels, this includes the model_id and MessagesApi class name.
-
-        Returns:
-            dict[str, str]: A dictionary with telemetry information about this model.
-                Includes: "type", "class", "model_id", "messages_api".
-
-        Example:
-            ```python
-            {
-                "type": "act_model",
-                "class": "AskUIAgent",
-                "model_id": "claude-sonnet-4-20250514",
-                "messages_api": "AnthropicMessagesApi"
-            }
-            ```
-        """
-        return {
-            "type": "act_model",
-            "class": self.__class__.__name__,
-            "model_id": self.__getattribute__("_model_id" or "-"),
-            "messages_api": self._messages_api.__class__.__name__,  # type: ignore[attr-defined]
-        }
-
 
 class GetModel(abc.ABC):
     """Abstract base class for models that can extract information from images and PDFs.
@@ -267,28 +241,6 @@ class GetModel(abc.ABC):
             provided
         """
         raise NotImplementedError
-
-    def to_telemetry_dict(self) -> dict[str, str]:
-        """Return a JSON-serializable representation for telemetry.
-
-        For GetModels, this includes the class name.
-
-        Returns:
-            dict[str, str]: A dictionary with telemetry information about this model.
-                Includes: "type", "class".
-
-        Example:
-            ```python
-            {
-                "type": "get_model",
-                "class": "AskUiGeminiGetModel"
-            }
-            ```
-        """
-        return {
-            "type": "get_model",
-            "class": self.__class__.__name__,
-        }
 
 
 class LocateModel(abc.ABC):
@@ -354,28 +306,6 @@ class LocateModel(abc.ABC):
             A list of detected elements
         """
         raise NotImplementedError
-
-    def to_telemetry_dict(self) -> dict[str, str]:
-        """Return a JSON-serializable representation for telemetry.
-
-        For LocateModels, this includes the class name.
-
-        Returns:
-            dict[str, str]: A dictionary with telemetry information about this model.
-                Includes: "type", "class".
-
-        Example:
-            ```python
-            {
-                "type": "locate_model",
-                "class": "AskUiPtaLocateModel"
-            }
-            ```
-        """
-        return {
-            "type": "locate_model",
-            "class": self.__class__.__name__,
-        }
 
 
 Model = ActModel | GetModel | LocateModel

@@ -11,7 +11,6 @@ from typing_extensions import Self
 
 from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback, ConversationStatisticsCallback
-from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.shared.agent_message_param import MessageParam, TextBlockParam
 from askui.models.shared.conversation import Conversation, Speakers
@@ -128,9 +127,6 @@ class Agent:
         self.locate_settings = LocateSettings()
         self.caching_settings = CachingSettings()
 
-    @telemetry.record_call(
-        exclude={"goal", "act_settings", "tools", "tracing_settings", "secrets"}
-    )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def act(
         self,
@@ -625,9 +621,6 @@ class Agent:
         get_settings: GetSettings | None = None,
     ) -> ResponseSchema: ...
 
-    @telemetry.record_call(
-        exclude={"query", "source", "response_schema", "get_settings"}
-    )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def get(
         self,
@@ -813,7 +806,6 @@ class Agent:
         logger.debug("LocateModel locate: %d elements", len(points))
         return points
 
-    @telemetry.record_call(exclude={"locator", "screenshot", "locate_settings"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def locate(
         self,
@@ -859,7 +851,6 @@ class Agent:
             locate_settings=locate_settings,
         )[0]
 
-    @telemetry.record_call(exclude={"locator", "screenshot", "locate_settings"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def locate_all(
         self,
@@ -908,7 +899,6 @@ class Agent:
             locate_settings=locate_settings,
         )
 
-    @telemetry.record_call(exclude={"screenshot"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def locate_all_elements(
         self,
@@ -947,7 +937,6 @@ class Agent:
             locate_settings=self.locate_settings,
         )
 
-    @telemetry.record_call(exclude={"screenshot", "annotation_dir"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def annotate(
         self,
@@ -1011,7 +1000,6 @@ class Agent:
             "AnnotationWriter", f"annotated HTML file saved to '{annotated_html}'"
         )
 
-    @telemetry.record_call(exclude={"until"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def wait(
         self,
@@ -1136,23 +1124,19 @@ class Agent:
         )
         raise WaitUntilError(locator, str(locator), retry_count, delay, "disappear")
 
-    @telemetry.record_call()
     def close(self) -> None:
         if self._agent_os is not None:
             self._agent_os.disconnect()
         self._reporter.generate()
 
-    @telemetry.record_call()
     def open(self) -> None:
         if self._agent_os is not None:
             self._agent_os.connect()
 
-    @telemetry.record_call()
     def __enter__(self) -> Self:
         self.open()
         return self
 
-    @telemetry.record_call(exclude={"exc_value", "traceback"})
     def __exit__(
         self,
         exc_type: Type[BaseException] | None,
