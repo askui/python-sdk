@@ -7,7 +7,6 @@ from pydantic import ConfigDict, Field, validate_call
 from askui.agent_base import Agent
 from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback
-from askui.container import telemetry
 from askui.locators.locators import Locator
 from askui.models.models import Point
 from askui.models.shared.secrets import Secret
@@ -70,16 +69,6 @@ class AndroidAgent(Agent):
         ```
     """
 
-    @telemetry.record_call(
-        exclude={
-            "reporters",
-            "settings",
-            "act_tools",
-            "callbacks",
-            "truncation_strategy",
-            "secrets",
-        }
-    )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def __init__(
         self,
@@ -139,7 +128,6 @@ class AndroidAgent(Agent):
         target: Point,
     ) -> None: ...
 
-    @telemetry.record_call(exclude={"locator"})
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def tap(
         self,
@@ -174,7 +162,6 @@ class AndroidAgent(Agent):
             point = self._locate(locator=target)[0]
             self.os.tap(point[0], point[1])
 
-    @telemetry.record_call(exclude={"text"})
     @validate_call
     def type(
         self,
@@ -202,7 +189,6 @@ class AndroidAgent(Agent):
         logger.debug("AndroidAgent received instruction to type")
         self.os.type(self._resolve_secrets(text))
 
-    @telemetry.record_call()
     @validate_call
     def key_tap(
         self,
@@ -225,7 +211,6 @@ class AndroidAgent(Agent):
         """
         self.os.key_tap(key)
 
-    @telemetry.record_call()
     @validate_call
     def key_combination(
         self,
@@ -254,7 +239,6 @@ class AndroidAgent(Agent):
         )
         self.os.key_combination(keys, duration_in_ms)
 
-    @telemetry.record_call()
     @validate_call
     def shell(
         self,
@@ -278,7 +262,6 @@ class AndroidAgent(Agent):
         self._reporter.add_message("User", f"shell(command='{command}')")
         return self.os.shell(command)
 
-    @telemetry.record_call()
     @validate_call
     def drag_and_drop(
         self,
@@ -312,7 +295,6 @@ class AndroidAgent(Agent):
         )
         self.os.drag_and_drop(x1, y1, x2, y2, duration_in_ms)
 
-    @telemetry.record_call()
     @validate_call
     def swipe(
         self,
@@ -346,9 +328,6 @@ class AndroidAgent(Agent):
         )
         self.os.swipe(x1, y1, x2, y2, duration_in_ms)
 
-    @telemetry.record_call(
-        exclude={"device_sn"},
-    )
     @validate_call
     def set_device_by_serial_number(
         self,

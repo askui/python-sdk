@@ -12,7 +12,6 @@ from google.protobuf.json_format import MessageToDict
 from PIL import Image
 from typing_extensions import Self, override
 
-from askui.container import telemetry
 from askui.reporting import NULL_REPORTER, Reporter
 from askui.tools.agent_os import (
     ComputerAgentOS,
@@ -119,7 +118,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
     _REPORTER_SOURCE = "AgentOS"
 
-    @telemetry.record_call(exclude={"reporter", "agent_os_target_computers"})
     def __init__(
         self,
         reporter: Reporter = NULL_REPORTER,
@@ -154,7 +152,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
     def _session_info(self) -> controller_v1_pbs.SessionInfo:
         return self._manager.active_connection().session_info
 
-    @telemetry.record_call(exclude={"agent_os_target_computer"})
     @override
     def add_agent_os_target_computer(
         self, agent_os_target_computer: ComputerTarget
@@ -170,7 +167,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         self._manager.add(agent_os_target_computer)
         return agent_os_target_computer
 
-    @telemetry.record_call(exclude={"agent_os_target_computers"})
     @override
     def reset_agent_os_target_computers(
         self,
@@ -201,7 +197,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             if was_connected:
                 self.connect()
 
-    @telemetry.record_call()
     @override
     def describe_agent_os_target_computers(self) -> list[str]:
         """Return the `repr()` string of every registered target computer."""
@@ -216,7 +211,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         return agent_os_target_computer_reprs
 
-    @telemetry.record_call()
     @override
     def get_current_computer_target_id(self, report: bool = True) -> str:
         """Return the `computer_id` of the currently active Agent OS target computer."""
@@ -232,7 +226,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             )
         return computer_id
 
-    @telemetry.record_call()
     @override
     def switch_agent_os_target_computer(self, computer_id: str) -> ComputerTarget:
         """
@@ -282,7 +275,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
                 f"temporary_select({computer_id!r}) -> restored",
             )
 
-    @telemetry.record_call()
     @override
     def connect(self) -> None:
         """
@@ -342,7 +334,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             )
         return response
 
-    @telemetry.record_call()
     @override
     def disconnect(self) -> None:
         """
@@ -351,7 +342,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         """
         self._manager.disconnect()
 
-    @telemetry.record_call()
     def __enter__(self) -> Self:
         """
         Context manager entry point that establishes the connection.
@@ -362,7 +352,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         self.connect()
         return self
 
-    @telemetry.record_call(exclude={"exc_value", "traceback"})
     def __exit__(
         self,
         exc_type: Type[BaseException] | None,
@@ -401,7 +390,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             )
             raise AskUiControllerError(error_msg)
 
-    @telemetry.record_call()
     @override
     def screenshot(self, report: bool = True, unscaled: bool = False) -> Image.Image:
         """
@@ -439,7 +427,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             self._reporter.add_message(self._REPORTER_SOURCE, "screenshot()", image)
         return image
 
-    @telemetry.record_call()
     @override
     def mouse_move(self, x: int, y: int, duration: int = 500) -> None:
         """
@@ -465,7 +452,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call(exclude={"text"})
     @override
     def type(self, text: str, typing_speed: int = 50) -> None:
         """
@@ -490,7 +476,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def click(
         self, button: Literal["left", "middle", "right"] = "left", count: int = 1
@@ -521,7 +506,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def mouse_down(self, button: Literal["left", "middle", "right"] = "left") -> None:
         """
@@ -549,7 +533,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def mouse_up(self, button: Literal["left", "middle", "right"] = "left") -> None:
         """
@@ -577,7 +560,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def mouse_scroll(self, dx: int, dy: int) -> None:
         """
@@ -615,7 +597,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
                 ),
             )
 
-    @telemetry.record_call()
     @override
     def keyboard_pressed(
         self, key: PcKey | ModifierKey, modifier_keys: list[ModifierKey] | None = None
@@ -642,7 +623,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def keyboard_release(
         self, key: PcKey | ModifierKey, modifier_keys: list[ModifierKey] | None = None
@@ -669,7 +649,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def keyboard_tap(
         self,
@@ -702,7 +681,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
                 ),
             )
 
-    @telemetry.record_call()
     @override
     def set_display(self, display: int = 1) -> None:
         """
@@ -719,7 +697,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         self._require_active_agent_os_target_computer().display = display
         self._reporter.add_message(self._REPORTER_SOURCE, f"set_display({display})")
 
-    @telemetry.record_call(exclude={"command"})
     @override
     def run_command(self, command: str, timeout_ms: int = 30000) -> None:
         """
@@ -742,7 +719,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             ),
         )
 
-    @telemetry.record_call()
     @override
     def retrieve_active_display(self) -> Display:
         """
@@ -773,7 +749,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         raise ValueError(error_msg)
 
-    @telemetry.record_call()
     @override
     def list_displays(
         self,
@@ -806,7 +781,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return displays
 
-    @telemetry.record_call()
     def get_process_list(
         self, get_extended_info: bool = False
     ) -> controller_v1_pbs.Response_GetProcessList:
@@ -841,7 +815,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return response
 
-    @telemetry.record_call()
     def get_window_list(
         self, process_id: int
     ) -> controller_v1_pbs.Response_GetWindowList:
@@ -872,7 +845,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return response
 
-    @telemetry.record_call()
     def get_automation_target_list(
         self,
     ) -> controller_v1_pbs.Response_GetAutomationTargetList:
@@ -898,7 +870,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return response
 
-    @telemetry.record_call()
     def set_mouse_delay(self, delay_ms: int) -> None:
         """
         Configure mouse action delay.
@@ -917,7 +888,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             )
         )
 
-    @telemetry.record_call()
     def set_keyboard_delay(self, delay_ms: int) -> None:
         """
         Configure keyboard action delay.
@@ -936,7 +906,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             )
         )
 
-    @telemetry.record_call()
     def set_active_window(self, process_id: int, window_id: int) -> int:
         """
         Set the active window for automation.
@@ -981,7 +950,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         return new_display_length
 
-    @telemetry.record_call()
     def set_active_automation_target(self, target_id: int) -> None:
         """
         Set the active automation target.
@@ -998,7 +966,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             controller_v1_pbs.Request_SetActiveAutomationTarget(ID=target_id)
         )
 
-    @telemetry.record_call()
     def schedule_batched_action(
         self,
         action_class_id: controller_v1_pbs.ActionClassID,
@@ -1035,7 +1002,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return response
 
-    @telemetry.record_call()
     def start_batch_run(self) -> None:
         """
         Start executing batched actions.
@@ -1047,7 +1013,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             controller_v1_pbs.Request_StartBatchRun(sessionInfo=self._session_info)
         )
 
-    @telemetry.record_call()
     def stop_batch_run(self) -> None:
         """
         Stop executing batched actions.
@@ -1059,7 +1024,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             controller_v1_pbs.Request_StopBatchRun(sessionInfo=self._session_info)
         )
 
-    @telemetry.record_call()
     def get_action_count(self) -> controller_v1_pbs.Response_GetActionCount:
         """
         Get the count of recorded or batched actions.
@@ -1079,7 +1043,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         return response
 
-    @telemetry.record_call()
     def get_action(self, action_index: int) -> controller_v1_pbs.Response_GetAction:
         """
         Get a specific action by its index.
@@ -1104,7 +1067,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return response
 
-    @telemetry.record_call()
     def remove_action(self, action_id: int) -> None:
         """
         Remove a specific action by its ID.
@@ -1121,7 +1083,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
             )
         )
 
-    @telemetry.record_call()
     def remove_all_actions(self) -> None:
         """
         Clear all recorded or batched actions.
@@ -1169,7 +1130,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return AskUIAgentOSSendResponseSchema.model_validate_json(response.message)
 
-    @telemetry.record_call()
     def get_mouse_position(self) -> Coordinate:
         """
         Get the mouse cursor position
@@ -1188,7 +1148,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         return coordinate
 
-    @telemetry.record_call()
     def set_mouse_position(self, x: int, y: int) -> None:
         """
         Set the mouse cursor position to specific coordinates.
@@ -1204,7 +1163,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         self._send_command(command)
 
-    @telemetry.record_call()
     def render_quad(self, style: RenderObjectStyle) -> int:
         """
         Render a quad object to the display.
@@ -1220,7 +1178,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         res = self._send_command(command)
         return int(res.message.command.response.id.root)  # type: ignore[union-attr]
 
-    @telemetry.record_call()
     def render_line(self, style: RenderObjectStyle, points: list[Coordinate]) -> int:
         """
         Render a line object to the display.
@@ -1239,7 +1196,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         res = self._send_command(command)
         return int(res.message.command.response.id.root)  # type: ignore[union-attr]
 
-    @telemetry.record_call(exclude={"image_data"})
     def render_image(self, style: RenderObjectStyle, image_data: str) -> int:
         """
         Render an image object to the display.
@@ -1260,7 +1216,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
 
         return int(res.message.command.response.id.root)  # type: ignore[union-attr]
 
-    @telemetry.record_call()
     def render_text(self, style: RenderObjectStyle, content: str) -> int:
         """
         Render a text object to the display.
@@ -1280,7 +1235,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         res = self._send_command(command)
         return int(res.message.command.response.id.root)  # type: ignore[union-attr]
 
-    @telemetry.record_call()
     def update_render_object(self, object_id: int, style: RenderObjectStyle) -> None:
         """
         Update styling properties of an existing render object.
@@ -1299,7 +1253,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         command = UpdateRenderObjectCommand(parameters=[render_object_id, style])
         self._send_command(command)
 
-    @telemetry.record_call()
     def delete_render_object(self, object_id: int) -> None:
         """
         Delete an existing render object from the display.
@@ -1314,7 +1267,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         command = DeleteRenderObjectCommand(parameters=[render_object_id])
         self._send_command(command)
 
-    @telemetry.record_call()
     def clear_render_objects(self) -> None:
         """
         Clear all render objects from the display.
@@ -1420,7 +1372,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         command = SetActiveWindowCommand(parameters=[_process_id, _window_id])
         self._send_command(command)
 
-    @telemetry.record_call()
     @override
     def get_file_names(self, absolute_directory_path: str) -> list[str]:
         """
@@ -1453,7 +1404,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         return res.response.fileNames
 
-    @telemetry.record_call()
     @override
     def get_file(self, path: str) -> Image.Image | PdfSource | str:
         """
@@ -1510,7 +1460,6 @@ class MultiComputerTargetAgentOS(ComputerAgentOS):
         )
         return decoded
 
-    @telemetry.record_call()
     @override
     def remove_virtual_displays(self) -> None:
         """

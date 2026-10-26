@@ -6,7 +6,6 @@ from pydantic import ConfigDict, validate_call
 from askui.agent_base import Agent
 from askui.agent_settings import AgentSettings
 from askui.callbacks import ConversationCallback
-from askui.container import telemetry
 from askui.models.shared.secrets import Secret
 from askui.models.shared.settings import (
     ActSettings,
@@ -88,18 +87,6 @@ class WebAgent(Agent):
         ```
     """
 
-    @telemetry.record_call(
-        exclude={
-            "reporters",
-            "settings",
-            "act_tools",
-            "callbacks",
-            "truncation_strategy",
-            "secrets",
-            "download_dir",
-            "auto_follow_new_tab",
-        }
-    )
     @validate_call(config=ConfigDict(arbitrary_types_allowed=True))
     def __init__(
         self,

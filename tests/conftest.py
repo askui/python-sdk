@@ -107,13 +107,6 @@ def agent_os_mock_patch(
     return agent_os_mock
 
 
-@pytest.fixture(autouse=True)
-def disable_telemetry() -> None:
-    from askui.container import telemetry
-
-    telemetry.set_processors([])
-
-
 @pytest.fixture
 def askui_logo_bmp(path_fixtures: pathlib.Path) -> Image.Image:
     """Fixture providing askui logo as BMP."""

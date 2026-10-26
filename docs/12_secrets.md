@@ -77,7 +77,7 @@ with ComputerAgent(secrets=secrets) as agent:
 
 ## Supported Agents
 
-`secrets=` is available on all agent types: `ComputerAgent`, `AndroidAgent`, `WebAgent`, `WebTestingAgent`, and `MultiDeviceAgent`. On `MultiDeviceAgent`, secrets are propagated to both the composed computer and Android agents. Secrets are excluded from telemetry.
+`secrets=` is available on all agent types: `ComputerAgent`, `AndroidAgent`, `WebAgent`, `WebTestingAgent`, and `MultiDeviceAgent`. On `MultiDeviceAgent`, secrets are propagated to both the composed computer and Android agents.
 
 ## Limitations
 
